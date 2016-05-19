@@ -11,6 +11,7 @@ import org.jbei.ice.lib.parsers.bl2seq.Bl2SeqParser;
 import org.jbei.ice.lib.parsers.bl2seq.Bl2SeqResult;
 import org.jbei.ice.lib.search.blast.BlastException;
 import org.jbei.ice.lib.search.blast.BlastPlus;
+import org.jbei.ice.lib.search.blast.ProgramTookTooLongException;
 import org.jbei.ice.lib.utils.Utils;
 import org.jbei.ice.storage.DAOFactory;
 import org.jbei.ice.storage.hibernate.dao.TraceSequenceDAO;
@@ -214,7 +215,7 @@ public class SequenceAnalysisController {
         String bl2seqOutput;
         try {
             bl2seqOutput = BlastPlus.runBlast2Seq(entrySequenceString, traceSequenceString);
-        } catch (BlastException e) {
+        } catch (BlastException | ProgramTookTooLongException e) {
             Logger.error(e);
             return;
         }

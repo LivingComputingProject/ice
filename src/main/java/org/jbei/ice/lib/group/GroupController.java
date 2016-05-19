@@ -51,11 +51,60 @@ public class GroupController {
         return isOwner || accountController.isAdministrator(userId);
     }
 
+    public ArrayList<AccountTransfer> getGroupMembers(String userId, long id) {
+        Group group = dao.get(id);
+        if (group == null || !canAccessGroup(userId, group))
+            return null;
+
+        // todo : add paging
+        ArrayList<AccountTransfer> list = new ArrayList<>();
+        for (Account account : group.getMembers()) {
+            list.add(account.toDataTransferObject());
+        }
+
+        return list;
+    }
+
+    /**
+     * Retrieves groups that user is either a member of. Users are implicit members of the groups
+     * that they create so call also returns those groups
+     *
+     * @param userIdString       user account  identifier of user making request
+     * @param userId             id of account whose groups are being requested
+     * @param includePublicGroup whether to include the public group that everyone is implicitly a member of
+     * @return list of groups that user is a member of
+     */
+    public ArrayList<UserGroup> retrieveUserGroups(String userIdString, long userId, boolean includePublicGroup) {
+        Account requester = accountController.getByEmail(userIdString);
+        Account account = accountController.get(userId);
+        // TODO : account authorization
+        if (!accountController.isAdministrator(userIdString) && !account.equals(requester))
+            return null;
+
+        Set<Group> result = dao.retrieveMemberGroups(account);
+        ArrayList<UserGroup> userGroups = new ArrayList<>();
+        if (includePublicGroup) {
+            Group publicGroup = createOrRetrievePublicGroup();
+            userGroups.add(publicGroup.toDataTransferObject());
+        }
+
+        for (Group group : result) {
+            UserGroup user = group.toDataTransferObject();
+            long count = dao.getMemberCount(group.getUuid());
+            user.setMemberCount(count);
+            userGroups.add(user);
+        }
+        return userGroups;
+    }
+
     public Set<String> retrieveAccountGroupUUIDs(String userId) {
         Account account = accountController.getByEmail(userId);
         Set<String> uuids = new HashSet<>();
         if (account != null) {
-            uuids.addAll(dao.getMemberGroupUUIDs(account));
+            Set<Group> groups = dao.retrieveMemberGroups(account);
+            for (Group group : groups) {
+                uuids.add(group.getUuid());
+            }
         }
         uuids.add(PUBLIC_GROUP_UUID);
         return uuids;
@@ -96,6 +145,9 @@ public class GroupController {
             accountController.save(memberAccount);
         }
 
+//        group.getMembers().addAll(accounts);
+//        group = dao.update(group);
+
         info = group.toDataTransferObject();
         for (Account addedAccount : group.getMembers()) {
             info.getMembers().add(addedAccount.toDataTransferObject());
@@ -104,16 +156,36 @@ public class GroupController {
         return info;
     }
 
-    public boolean deleteGroup(String userIdStr, long groupId) {
-        Account account = DAOFactory.getAccountDAO().getByEmail(userIdStr);
-        Group group = dao.get(groupId);
-        if (group == null)
+    public boolean updateGroup(String userId, UserGroup user) {
+        if (user.getType() == GroupType.PUBLIC && !accountController.isAdministrator(userId)) {
+            String errMsg = "Non admin " + userId + " attempting to update public group";
+            Logger.error(errMsg);
             return false;
+        }
 
-        if (group.getType() == GroupType.PUBLIC && account.getType() != AccountType.ADMIN) {
+        Group group = dao.get(user.getId());
+        if (group == null) {
+            return false;
+        }
+
+        group.setLabel(user.getLabel());
+        group.setDescription(user.getDescription());
+        group = dao.update(group);
+
+        setGroupMembers(group, user.getMembers());
+        return group != null;
+    }
+
+    public UserGroup deleteGroup(Account account, UserGroup user) {
+        if (user.getType() == GroupType.PUBLIC && account.getType() != AccountType.ADMIN) {
             String errMsg = "Non admin " + account.getEmail() + " attempting to delete public group";
             Logger.error(errMsg);
             throw new PermissionException(errMsg);
+        }
+
+        Group group = dao.get(user.getId());
+        if (group == null) {
+            throw new IllegalArgumentException("Could not find group to delete");
         }
 
         if (group.getMembers() != null) {
@@ -121,10 +193,10 @@ public class GroupController {
                 accountController.removeMemberFromGroup(group.getId(), member.getEmail());
             }
         }
-
         DAOFactory.getPermissionDAO().clearPermissions(group);
+        UserGroup userGroup = group.toDataTransferObject();
         dao.delete(group);
-        return true;
+        return userGroup;
     }
 
     public Group createOrRetrievePublicGroup() {
@@ -213,5 +285,37 @@ public class GroupController {
         }
 
         return groupIds;
+    }
+
+    protected void setGroupMembers(Group group, ArrayList<AccountTransfer> members) {
+        // is there an easier way to do this?
+        // remove
+        for (Account member : group.getMembers()) {
+            Account memberAccount = accountController.getByEmail(member.getEmail());
+            if (memberAccount == null)
+                continue;
+            memberAccount.getGroups().remove(group);
+            accountController.save(memberAccount);
+        }
+
+        // add
+        ArrayList<Account> accounts = new ArrayList<>();
+        for (AccountTransfer accountTransfer : members) {
+            Account memberAccount = accountController.getByEmail(accountTransfer.getEmail());
+            if (memberAccount == null)
+                continue;
+            memberAccount.getGroups().add(group);
+            accountController.save(memberAccount);
+            accounts.add(memberAccount);
+        }
+
+        group.getMembers().clear();
+        group.getMembers().addAll(accounts);
+        dao.update(group);
+
+        members.clear();
+        for (Account addedAccount : accounts) {
+            members.add(addedAccount.toDataTransferObject());
+        }
     }
 }

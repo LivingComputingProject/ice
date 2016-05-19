@@ -9,7 +9,6 @@ angular.module('ice.entry.service', [])
         var allSelection = {};
         var canDelete = false;
         var selectedTypes = {};
-        var searchQuery = undefined;
         var userId = $cookieStore.get('userId');
 
         return {
@@ -135,14 +134,6 @@ angular.module('ice.entry.service', [])
                 return allSelection.type == 'ALL';
             },
 
-            setSearch: function (query) {
-                searchQuery = query;
-            },
-
-            getSearch: function () {
-                return searchQuery;
-            },
-
             // resets all selected and send notifications
             reset: function () {
                 selectedEntries = {};
@@ -152,7 +143,6 @@ angular.module('ice.entry.service', [])
                 allSelection = {};
                 canEdit = false;
                 canDelete = false;
-                searchQuery = undefined;
                 $rootScope.$emit("EntrySelected", selectedSearchResultsCount);
             }
         }
@@ -450,58 +440,28 @@ angular.module('ice.entry.service', [])
                 entry.status = 'Complete';
                 entry.parameters = [];
                 return entry;
-            },
-
-            getMenuSubDetails: function () {
-                return [
-                    {
-                        url: 'scripts/entry/general-information.html',
-                        display: 'General Information',
-                        isPrivileged: false,
-                        icon: 'fa-exclamation-circle'
-                    },
-                    {
-                        id: 'sequences',
-                        url: 'scripts/entry/sequence-analysis.html',
-                        display: 'Sequence Analysis',
-                        isPrivileged: false,
-                        countName: 'sequenceCount',
-                        icon: 'fa-search-plus'
-                    },
-                    {
-                        id: 'comments',
-                        url: 'scripts/entry/comments.html',
-                        display: 'Comments',
-                        isPrivileged: false,
-                        countName: 'commentCount',
-                        icon: 'fa-comments-o'
-                    },
-                    {
-                        id: 'samples',
-                        url: 'scripts/entry/samples.html',
-                        display: 'Samples',
-                        isPrivileged: false,
-                        countName: 'sampleCount',
-                        icon: 'fa-flask'
-                    },
-                    {
-                        id: 'history',
-                        url: 'scripts/entry/history.html',
-                        display: 'History',
-                        isPrivileged: true,
-                        countName: 'historyCount',
-                        icon: 'fa-history'
-                    },
-                    {
-                        id: 'experiments',
-                        url: 'scripts/entry/experiments.html',
-                        display: 'Experimental Data',
-                        isPrivileged: false,
-                        countName: 'experimentalDataCount',
-                        icon: 'fa-database'
-                    }
-                ];
             }
+        }
+    })
+    .factory('CustomField', function ($resource, $cookieStore) {
+        return function () {
+
+            var sessionId = $cookieStore.get("sessionId");
+
+            return $resource('rest/custom-fields', {id: '@id'}, {
+                createNewCustomField: {
+                    method: 'POST',
+                    responseType: "json",
+                    headers: {'X-ICE-Authentication-SessionId': sessionId}
+                },
+
+                deleteCustomField: {
+                    method: 'DELETE',
+                    responseType: "json",
+                    url: "rest/custom-fields/:id",
+                    headers: {'X-ICE-Authentication-SessionId': sessionId}
+                }
+            });
         }
     })
 ;

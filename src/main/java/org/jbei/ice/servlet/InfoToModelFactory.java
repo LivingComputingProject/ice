@@ -2,6 +2,7 @@ package org.jbei.ice.servlet;
 
 import org.apache.commons.lang3.StringUtils;
 import org.jbei.ice.lib.common.logging.Logger;
+import org.jbei.ice.lib.dto.bulkupload.EntryField;
 import org.jbei.ice.lib.dto.entry.*;
 import org.jbei.ice.lib.shared.BioSafetyOption;
 import org.jbei.ice.storage.model.*;

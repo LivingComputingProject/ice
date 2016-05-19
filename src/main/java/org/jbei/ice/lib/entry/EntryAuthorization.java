@@ -29,9 +29,11 @@ public class EntryAuthorization extends Authorization<Entry> {
 
     public boolean canRead(String userId, Entry entry) {
         // super checks for owner or admin
-        if (userId == null) {
-            return new PermissionsController().isPubliclyVisible(entry);
-        }
+        if (new PermissionsController().isPubliclyVisible(entry))
+            return true;
+
+        if (userId == null)
+            return false;
 
         if (super.canRead(userId, entry) || super.canWrite(userId, entry))
             return true;
@@ -108,8 +110,6 @@ public class EntryAuthorization extends Authorization<Entry> {
             return true;
 
         Set<Folder> entryFolders = entry.getFolders();
-        if (entryFolders == null || entryFolders.isEmpty())
-            return false;
 
         // can any group that account belongs to read any folder that entry is contained in?
         if (permissionDAO.hasPermissionMulti(null, entryFolders, null, accountGroups, false, true))

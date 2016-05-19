@@ -1,7 +1,6 @@
 package org.jbei.ice.lib.dto.folder;
 
 import org.jbei.ice.lib.account.AccountTransfer;
-import org.jbei.ice.lib.dto.web.RegistryPartner;
 import org.jbei.ice.lib.folder.AbstractFolder;
 
 /**
@@ -21,7 +20,6 @@ public class FolderDetails extends AbstractFolder {
     private boolean publicReadAccess;
     private boolean canEdit;
     private FolderDetails parent;
-    private RegistryPartner remotePartner;
 
     public FolderDetails() {
         super();
@@ -105,13 +103,5 @@ public class FolderDetails extends AbstractFolder {
 
     public void setCanEdit(boolean canEdit) {
         this.canEdit = canEdit;
-    }
-
-    public RegistryPartner getRemotePartner() {
-        return remotePartner;
-    }
-
-    public void setRemotePartner(RegistryPartner remotePartner) {
-        this.remotePartner = remotePartner;
     }
 }

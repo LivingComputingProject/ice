@@ -4,8 +4,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.jbei.ice.lib.access.PermissionException;
 import org.jbei.ice.lib.common.logging.Logger;
 import org.jbei.ice.lib.entry.EntryAuthorization;
-import org.jbei.ice.lib.entry.HasEntry;
 import org.jbei.ice.storage.DAOFactory;
+import org.jbei.ice.storage.hibernate.dao.EntryDAO;
 import org.jbei.ice.storage.hibernate.dao.ExperimentDAO;
 import org.jbei.ice.storage.model.Entry;
 import org.jbei.ice.storage.model.Experiment;
@@ -19,14 +19,16 @@ import java.util.List;
  *
  * @author Hector Plahar
  */
-public class Experiments extends HasEntry {
+public class Experiments {
 
     private final ExperimentDAO dao;
+    private final EntryDAO entryDAO;
     private final EntryAuthorization entryAuthorization;
 
     public Experiments() {
         dao = DAOFactory.getExperimentDAO();
         entryAuthorization = new EntryAuthorization();
+        entryDAO = DAOFactory.getEntryDAO();
     }
 
     /**
@@ -39,14 +41,14 @@ public class Experiments extends HasEntry {
      * @throws PermissionException if the specified user does not have read privileges on the
      *                             specified entry
      */
-    public ArrayList<Study> getPartStudies(String userId, String partId) {
-        Entry entry = getEntry(partId);
+    public ArrayList<Study> getPartStudies(String userId, long partId) {
+        Entry entry = entryDAO.get(partId);
         if (entry == null)
             return null;
 
         entryAuthorization.expectRead(userId, entry);
 
-        List<Experiment> experimentList = dao.getExperimentList(entry.getId());
+        List<Experiment> experimentList = dao.getExperimentList(partId);
         if (experimentList == null)
             return null;
 
@@ -60,24 +62,22 @@ public class Experiments extends HasEntry {
 
     /**
      * Creates a new study for a particular entry. If a unique identifier is associated with the {@link Study} object
-     * then an update occurs instead of a new object being created.
-     * <p>
-     * Only read access is required to create a new study. To update an existing study
-     * the user must be the creator or must have write access on the entry the study is associated with
+     * then an update occurs instead of a new object being created
      *
-     * @param userId id of user making request.
+     * @param userId id of user making request. Must have write privileges on the entry
      * @param partId id of entry the study is being created for
      * @param study  data for study
      * @return saved study (including unique identifier)
      */
-    public Study createOrUpdateStudy(String userId, String partId, Study study) {
-        Entry entry = getEntry(partId);
+    public Study createOrUpdateStudy(String userId, long partId, Study study) {
+        Entry entry = entryDAO.get(partId);
         if (entry == null)
             return null;
 
         if (StringUtils.isEmpty(study.getUrl()))
             return null;
 
+        entryAuthorization.expectWrite(userId, entry);
         Experiment experiment = null;
 
         if (study.getId() > 0) {
@@ -88,7 +88,6 @@ public class Experiments extends HasEntry {
             experiment = dao.getByUrl(study.getUrl());
 
         if (experiment == null) {
-            entryAuthorization.expectRead(userId, entry);
             experiment = new Experiment();
             experiment.setCreationTime(new Date());
             experiment.setUrl(study.getUrl());
@@ -99,8 +98,6 @@ public class Experiments extends HasEntry {
             return experiment.toDataTransferObject();
         }
 
-        if (!userId.equalsIgnoreCase(study.getOwnerEmail()))
-            entryAuthorization.expectWrite(userId, entry);
         experiment.setUrl(study.getUrl());
         experiment.setLabel(study.getLabel());
         experiment.getSubjects().add(entry);
@@ -117,19 +114,19 @@ public class Experiments extends HasEntry {
      * @param studyId id of study to be deleted
      * @return true if study is found and deleted successfully, false otherwise
      */
-    public boolean deleteStudy(String userId, String partId, long studyId) {
+    public boolean deleteStudy(String userId, long partId, long studyId) {
         Experiment experiment = dao.get(studyId);
         if (experiment == null)
             return false;
 
-        Entry entry = getEntry(partId);
+        Entry entry = entryDAO.get(partId);
         if (entry == null) {
             Logger.error("Could not retrieve entry with id " + partId);
             return false;
         }
 
-        if (!experiment.getOwnerEmail().equalsIgnoreCase(userId) &&
-                !entryAuthorization.canWriteThoroughCheck(userId, entry)) {
+        if (!entryAuthorization.canWriteThoroughCheck(userId, entry) &&
+                !experiment.getOwnerEmail().equalsIgnoreCase(userId)) {
             throw new PermissionException("Cannot delete experiment");
         }
 

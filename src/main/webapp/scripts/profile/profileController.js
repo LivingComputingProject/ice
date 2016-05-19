@@ -1,79 +1,13 @@
 'use strict';
 
 angular.module('ice.profile.controller', [])
-    .controller('MessageController', function ($scope, $uibModal, $stateParams, Util) {
-        $scope.selectedMessage = undefined;
-
-        $scope.selectMessage = function (message) {
-            Util.get("rest/messages/" + message.id, function (result) {
-                message.selected = true;
-                //result.message = result.message.replace(/(?:\r\n|\r|\n)/g, '<br />');
-                $scope.selectedMessage = result;
-            });
-        };
-
-        // get all messages
-        Util.get("rest/messages", function (result) {
+    .controller('MessageController', function ($scope, $location, $cookieStore, $stateParams, Message) {
+        var message = Message($cookieStore.get('sessionId'));
+        var profileId = $stateParams.id;
+        $location.path("profile/" + profileId + "/messages", false);
+        message.query(function (result) {
             $scope.messages = result;
-            if (result.data.length) {
-                $scope.selectMessage(result.data[0]);
-            }
         });
-
-        $scope.replyMessage = function () {
-        };
-
-        $scope.openCreateMessageModal = function () {
-            $uibModal.open({
-                templateUrl: 'scripts/profile/modal/create-message.html',
-                backdrop: "static",
-                keyboard: false,
-                controller: 'CreateMessageController'
-            })
-        };
-    })
-    .controller('CreateMessageController', function ($scope, $uibModalInstance, $http, $cookieStore, Util) {
-        $scope.newMessage = {accounts: [], userGroups: []};
-
-        $scope.createNewMessage = function () {
-            Util.post("rest/messages", $scope.newMessage, function (result) {
-                $uibModalInstance.close();
-            })
-        };
-
-        $scope.closeGroupModal = function () {
-            $uibModalInstance.dismiss('cancel');
-        };
-
-        $scope.setMessageRecipient = function (a, b, c) {
-            $scope.newMessage.accounts.push(a);
-            $scope.addedUser = undefined;
-        };
-
-        $scope.removeMessageRecipient = function (account, group) {
-            if (account) {
-                var accountIdx = $scope.newMessage.accounts.indexOf(account);
-                if (accountIdx != -1)
-                    $scope.newMessage.accounts.splice(accountIdx, 1);
-            }
-
-            if (group) {
-                var groupIdx = $scope.newMessage.userGroups.indexOf(gr);
-                if (groupIdx != -1)
-                    $scope.newMessage.userGroups.splice(groupIdx, 1);
-            }
-        };
-
-        $scope.filter = function (val) {
-            return $http.get('rest/users/autocomplete', {
-                headers: {'X-ICE-Authentication-SessionId': $cookieStore.get("sessionId")},
-                params: {
-                    val: val
-                }
-            }).then(function (res) {
-                return res.data;
-            });
-        };
     })
     .controller('ApiKeysController', function ($scope, $uibModal, Util) {
         $scope.apiKeys = undefined;
@@ -113,26 +47,29 @@ angular.module('ice.profile.controller', [])
         };
 
         $scope.generateToken = function () {
+            console.log($scope.client);
             if (!$scope.client.id) {
                 $scope.clientIdValidationError = true;
                 return;
             }
 
             var queryParams = {client_id: $scope.client.id};
-            Util.post("rest/api-keys", null, function (result) {
+            Util.post("/rest/api-keys", null, function (result) {
                 $scope.apiKey = result;
             }, queryParams);
         }
     })
-    .controller('ProfileEntryController', function ($scope, $location, $cookieStore, $stateParams, Util) {
+    .controller('ProfileEntryController', function ($scope, $location, $cookieStore, $stateParams, User, Entry) {
+        var user = User($cookieStore.get("sessionId"));
         var profileId = $stateParams.id;
-        $scope.profileEntryPopupTemplate = "scripts/folder/template.html";
+
+        $location.path("profile/" + profileId + "/entries", false);
         $scope.maxSize = 5;
         $scope.params = {userId: profileId, sort: "created", asc: false, currentPage: 1};
 
-        Util.get("rest/users/" + profileId + "/entries", function (result) {
+        user.getEntries($scope.params, function (result) {
             $scope.folder = result;
-        }, $scope.params);
+        });
 
         $scope.sort = function (sortType) {
             $scope.folder = null;
@@ -140,30 +77,40 @@ angular.module('ice.profile.controller', [])
             $scope.params.asc = $scope.params.sort === sortType ? !$scope.params.asc : false;
             $scope.params.sort = sortType;
             $scope.params.offset = 0;
-
-            Util.get("rest/users/" + profileId + "/entries", function (result) {
+            user.getEntries($scope.params, function (result) {
                 $scope.folder = result;
                 $scope.params.currentPage = 1;
-            }, $scope.params);
+            }, function (error) {
+                console.error(error);
+            });
         };
+
+        $scope.profileEntryPopupTemplate = "scripts/folder/template.html";
 
         $scope.tooltipDetails = function (entry) {
             $scope.currentTooltip = undefined;
-            Util.get("rest/parts/" + entry.id + "/tooltip", function (result) {
-                $scope.currentTooltip = result;
-            });
+            var sessionId = $cookieStore.get("sessionId");
+
+            Entry(sessionId).tooltip({partId: entry.id},
+                function (result) {
+                    $scope.currentTooltip = result;
+                }, function (error) {
+                    console.error(error);
+                });
         };
 
         $scope.userEntriesPageChanged = function () {
             $scope.loadingPage = true;
             $scope.params.offset = ($scope.params.currentPage - 1) * 15;
-            Util.get("rest/users/" + profileId + "/entries", function (result) {
+            user.getEntries($scope.params, function (result) {
                 $scope.folder = result;
                 $scope.loadingPage = false;
-            }, $scope.params);
+            }, function (error) {
+                console.error(error);
+            });
         };
     })
-    .controller('ProfileController', function ($scope, $location, $rootScope, $stateParams, Util, ProfileService) {
+    .controller('ProfileController', function ($scope, $location, $cookieStore, $rootScope, $stateParams, User, Util) {
         $scope.showChangePassword = false;
         $scope.showEditProfile = false;
         $scope.showSendMessage = false;
@@ -175,26 +122,89 @@ angular.module('ice.profile.controller', [])
             $scope.passwordChangeAllowed = (result.value.toLowerCase() === 'yes');
         });
 
-        $scope.preferenceEntryDefaults = ProfileService.preferenceEntryDefaults();
+        $scope.preferenceEntryDefaults = [
+            {display: "Principal Investigator", id: "PRINCIPAL_INVESTIGATOR", help: "Enter Email or Name"},
+            {display: "Funding Source", id: "FUNDING_SOURCE"}
+        ];
+
         $scope.preferences = {};
 
+        var user = User($cookieStore.get('sessionId'));
         var profileOption = $stateParams.option;
         var profileId = $scope.userId = $stateParams.id;
 
         $scope.savePreference = function (pref) {
-            Util.post("rest/users/" + profileId + "/preferences/" + pref.id, {}, function (result) {
-                pref.edit = false;
-            }, {value: $scope.preferences[pref.id]});
+            if (!$scope.preferences[pref.id]) {
+                pref.invalid = true;
+                return;
+            }
+
+            user.updatePreference({userId: profileId, value: $scope.preferences[pref.id]}, {preferenceKey: pref.id},
+                function (result) {
+                    pref.edit = false;
+                });
         };
 
-        var menuOptions = $scope.profileMenuOptions = ProfileService.profileMenuOptions();
+        var menuOptions = $scope.profileMenuOptions = [
+            {
+                url: 'scripts/profile/profile-information.html',
+                display: 'Profile',
+                selected: true,
+                icon: 'fa-user',
+                open: true
+            },
+            {
+                id: 'prefs',
+                url: 'scripts/profile/preferences.html',
+                display: 'Settings',
+                selected: false,
+                icon: 'fa-cog'
+            },
+            {
+                id: 'groups',
+                url: 'scripts/profile/groups.html',
+                display: 'Private Groups',
+                selected: false,
+                icon: 'fa-group'
+            },
+            {
+                id: 'messages',
+                url: 'scripts/profile/messages.html',
+                display: 'Messages',
+                selected: false,
+                icon: 'fa-envelope-o'
+            },
+            {
+                id: 'samples',
+                url: 'scripts/profile/samples.html',
+                display: 'Samples',
+                selected: false,
+                icon: 'fa-shopping-cart'
+            },
+            {
+                id: 'entries',
+                url: 'scripts/profile/entries.html',
+                display: 'Entries',
+                selected: false,
+                icon: 'fa-th-list',
+                open: true
+            },
+            {
+                id: 'api-keys',
+                url: 'scripts/profile/api-keys.html',
+                display: 'API Keys',
+                selected: false,
+                icon: 'fa-key',
+                open: true
+            }
+        ];
 
         $scope.showSelection = function (index) {
             var selectedOption = menuOptions[index];
             if (!selectedOption)
                 return;
 
-            var canViewSelected = selectedOption.open || $rootScope.user.isAdmin || ($scope.profile.email === $rootScope.user.email);
+            var canViewSelected = selectedOption.open || user.isAdmin || ($scope.profile.email === $rootScope.user.email);
             if (!canViewSelected)
                 return;
 
@@ -231,9 +241,9 @@ angular.module('ice.profile.controller', [])
         }
 
         // retrieve profile information from server
-        Util.get("rest/users/" + profileId, function (result) {
+        user.query({userId: profileId}, function (result) {
             $scope.profile = result;
-            Util.get("rest/users/" + profileId + "/preferences", function (prefs) {
+            user.getPreferences({userId: profileId}, function (prefs) {
                 $scope.profile.preferences = prefs;
                 if (prefs.preferences == undefined)
                     return;
@@ -281,12 +291,16 @@ angular.module('ice.profile.controller', [])
                 return;
             }
 
+            var user = User($cookieStore.get("sessionId"));
+
             // validate existing password
             $scope.passwordChangeSuccess = undefined;
             $scope.changePasswordError = undefined;
 
-            Util.update("rest/users/" + $stateParams.id + "/password", {password: pass.new}, {},
+            // server call
+            user.changePassword({userId: $stateParams.id}, {password: pass.new},
                 function (success) {
+                    console.log("password change", success);
                     if (!success) {
                         $scope.changePasswordError = "There was an error changing the password";
                     } else {
@@ -298,7 +312,7 @@ angular.module('ice.profile.controller', [])
         };
 
         $scope.updateProfile = function () {
-            Util.update("rest/users/" + profileId, $scope.editProfile, {}, function (result) {
+            user.update({userId: profileId}, $scope.editProfile, function (result) {
                 $scope.profile = result;
                 $scope.editClick(false, false, false);
             });
@@ -308,48 +322,64 @@ angular.module('ice.profile.controller', [])
             $scope.editProfile = angular.copy($scope.profile);
         }
     })
-    .controller('ProfileSamplesController', function ($scope, $cookieStore, $location, $stateParams, Util) {
+    .controller('ProfileSamplesController', function ($scope, $cookieStore, $location, $stateParams, User) {
         $scope.maxSize = 15;
         $scope.params = {currentPage: 1};
         $scope.pendingSampleRequests = undefined;
 
-        Util.get('rest/users/' + $stateParams.id + '/samples', function (result) {
-            $scope.userSamples = result;
-        });
+        var user = User($cookieStore.get("sessionId"));
+        var profileId = $stateParams.id;
+        user.samples({userId: profileId},
+            function (result) {
+                $scope.userSamples = result;
+            }, function (error) {
+                console.error(error);
+            });
 
         $scope.profileSamplesPageChanged = function () {
             $scope.loadingPage = true;
             $scope.offset = ($scope.params.currentPage - 1) * 15;
-            Util.get('rest/users/' + $stateParams.id + '/samples', function (result) {
-                $scope.userSamples = result;
-                $scope.loadingPage = false;
-            }, {offset: $scope.offset}, function (error) {
-                $scope.loadingPage = false;
-            });
+            user.samples({offset: $scope.offset}, {userId: profileId},
+                function (result) {
+                    $scope.userSamples = result;
+                    $scope.loadingPage = false;
+                }, function (error) {
+                    console.error(error);
+                    $scope.loadingPage = false;
+                });
         }
     })
-    .controller('ProfileGroupsController', function ($rootScope, $scope, $location, $cookieStore, $stateParams,
-                                                     $uibModal, Util) {
+    .controller('ProfileGroupsController', function ($rootScope, $scope, $location, $cookieStore, $stateParams, User, Group) {
         var profileId = $stateParams.id;
         $location.path("profile/" + profileId + "/groups", false);
         $scope.selectedUsers = [];
         $scope.selectedRemoteUsers = [];
+        $scope.myGroups = [];
+        $scope.groupsIBelong = [];
         $scope.enteredUser = undefined;
-        $scope.privateGroupsParams = {offset: 0, limit: 10, currentPage: 1, maxSize: 5};
+        $scope.showCreateGroup = false;
+
+        var user = User($cookieStore.get('sessionId'));
+        var group = Group();
 
         // init: retrieve groups user belongs to and created
-        var getGroups = function () {
-            Util.get("rest/users/" + profileId + "/groups", function (result) {
-                $scope.userGroups = result;
+        user.getGroups({userId: profileId}, function (result) {
+            angular.forEach(result, function (item) {
+                if (item.ownerEmail && item.ownerEmail === $rootScope.user.email)
+                    $scope.myGroups.push(item);
+                else
+                    $scope.groupsIBelong.push(item);
             });
-        };
-        getGroups();
+
+            $scope.userGroups = result;
+        });
 
         $scope.switchToEditMode = function (selectedGroup) {
             selectedGroup.edit = true;
-            Util.list("rest/groups/" + selectedGroup.id + "/members", function (result) {
+            group.members({groupId: selectedGroup.id}, function (result) {
                 selectedGroup.members = result;
-            }, {}, function (error) {
+            }, function (error) {
+                console.error(error);
                 selectedGroup.members = undefined;
             });
         };
@@ -369,13 +399,14 @@ angular.module('ice.profile.controller', [])
             }
 
             $scope.filtering = true;
-            Util.list('rest/users/autocomplete', function (result) {
-                $scope.userMatches = result;
-                $scope.filtering = false;
-            }, {limit: 10, val: val}, function (error) {
-                $scope.filtering = false;
-                $scope.userMatches = undefined;
-            });
+            user.filter({limit: 10, val: val},
+                function (result) {
+                    $scope.userMatches = result;
+                    $scope.filtering = false;
+                }, function (error) {
+                    $scope.filtering = false;
+                    $scope.userMatches = undefined;
+                });
         };
 
         $scope.selectUser = function (user) {
@@ -398,147 +429,21 @@ angular.module('ice.profile.controller', [])
 
         $scope.createGroup = function (groupName, groupDescription) {
             $scope.newGroup = {label: groupName, description: groupDescription, members: $scope.selectedUsers};
-            Util.update("rest/users/" + profileId + "/groups", $scope.newGroup, {}, function (result) {
-                $scope.userGroups.data.splice(0, 0, result);
+            user.createGroup({userId: profileId}, $scope.newGroup, function (result) {
+                $scope.myGroups.splice(0, 0, result);
                 $scope.showCreateGroup = false;
+            }, function (error) {
+                console.error(error);
             })
         };
 
         $scope.updateGroup = function (selectedGroup) {
-            Util.update("rest/groups/" + selectedGroup.id, selectedGroup, {}, function (result) {
+            group.update({groupId: selectedGroup.id}, selectedGroup, function (result) {
                 selectedGroup.memberCount = selectedGroup.members.length;
                 selectedGroup.edit = false;
+            }, function (error) {
+                console.error(error);
             });
-        };
-
-        $scope.openCreateGroupModal = function (group) {
-            var modalInstance = $uibModal.open({
-                templateUrl: 'scripts/profile/modal/edit-group.html',
-                controller: 'ProfileGroupsModalController',
-                backdrop: "static",
-                keyboard: false,
-                //size: "lg",
-                resolve: {
-                    currentGroup: function () {
-                        return group;
-                    }
-                }
-            });
-
-            modalInstance.result.then(function (result) {
-                if (!result)
-                    return;
-
-                Util.setFeedback("Group successfully created", "success");
-                getGroups();
-            })
-        };
-
-        $scope.deleteUserGroup = function (group) {
-            Util.remove("rest/groups/" + group.id, {}, function (result) {
-                var i = $scope.userGroups.data.indexOf(group);
-                if (i >= 0)
-                    $scope.userGroups.data.splice(i, 1);
-                console.log(result);
-            })
         }
-    })
-    .controller('ProfileGroupsModalController', function ($scope, $http, Util, currentGroup, $cookieStore, $uibModalInstance) {
-        $scope.headerMessage = currentGroup ? "Update \"" + currentGroup.label + "\"" : "Create New Group";
-        $scope.webPartners = [];
-        $scope.placeHolder = 'User name or email';
-
-        $scope.closeGroupModal = function () {
-            $uibModalInstance.dismiss('cancel');
-        };
-
-        if (currentGroup && currentGroup.id) {
-            Util.get("rest/groups/" + currentGroup.id + "/members", function (result) {
-                currentGroup.type = 'ACCOUNT';
-                $scope.newGroup = currentGroup;
-
-                angular.forEach(result.members, function (member) {
-                    member.type = 'ACCOUNT';
-                    $scope.newGroup.members.push(member);
-                });
-
-                angular.forEach(result.remoteMembers, function (member) {
-                    member.type = 'REMOTE';
-                    $scope.newGroup.members.push(member);
-                });
-            });
-        } else {
-            $scope.newGroup = {members: [], type: 'ACCOUNT'};
-        }
-
-        $scope.getWebPartners = function () {
-            $scope.placeHolder = 'Enter remote user\'s email';
-            Util.list("rest/partners", function (result) {
-                $scope.webPartners = result;
-            });
-        };
-
-        $scope.filter = function (val) {
-            if ($scope.newGroup.type == 'REMOTE')
-                return;
-
-            return $http.get('rest/users/autocomplete', {
-                headers: {'X-ICE-Authentication-SessionId': $cookieStore.get("sessionId")},
-                params: {
-                    val: val
-                }
-            }).then(function (res) {
-                return res.data;
-            });
-        };
-
-        $scope.userSelectionForGroupAdd = function ($item, $model, $label) {
-            if ($scope.newGroup.type == 'REMOTE') {
-                $scope.newGroup.members.push({
-                    type: $scope.newGroup.type,
-                    email: $item,
-                    partner: $scope.newGroup.partner
-                });
-            } else {
-                $item.type = $scope.newGroup.type;
-                $scope.newGroup.members.push($item);
-            }
-
-            // reset
-            $scope.newUserName = undefined;
-            $scope.newGroup.partner = undefined;
-            $scope.newGroup.type = 'ACCOUNT';
-        };
-
-        $scope.createOrUpdateGroup = function () {
-            var members = [];
-            var remoteMembers = [];
-
-            for (var i = 0; i < $scope.newGroup.members.length; i += 1) {
-                var member = $scope.newGroup.members[i];
-                if (member.type == 'REMOTE') {
-                    remoteMembers.push({user: {email: member.email}, partner: member.partner});
-                } else {
-                    members.push(member);
-                }
-            }
-
-            $scope.newGroup.members = members;
-            $scope.newGroup.remoteMembers = remoteMembers;
-
-            if ($scope.newGroup.id) {
-                Util.update("rest/groups/" + $scope.newGroup.id, $scope.newGroup, {}, function (result) {
-                    $uibModalInstance.close(result);
-                });
-            } else {
-                Util.post("rest/groups", $scope.newGroup, function (result) {
-                    $uibModalInstance.close(result);
-                })
-            }
-        };
-
-        $scope.selectPartnerForGroupAdd = function (partner) {
-            $scope.newGroup.partner = {id: partner.id, url: partner.url};
-        };
     })
 ;

@@ -158,7 +158,7 @@ public class Message implements DataModel {
         info.setMessage(getMessage());
         info.setTitle(getTitle());
         info.setRead(isRead());
-        info.setSent(this.dateSent.getTime());
+        info.setSent(getDateSent());
         return info;
     }
 }

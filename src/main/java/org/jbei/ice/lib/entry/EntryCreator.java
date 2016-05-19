@@ -2,9 +2,9 @@ package org.jbei.ice.lib.entry;
 
 import org.apache.commons.lang3.StringUtils;
 import org.jbei.ice.lib.dto.FeaturedDNASequence;
-import org.jbei.ice.lib.dto.access.AccessPermission;
 import org.jbei.ice.lib.dto.entry.PartData;
 import org.jbei.ice.lib.dto.entry.Visibility;
+import org.jbei.ice.lib.dto.permission.AccessPermission;
 import org.jbei.ice.lib.entry.sequence.SequenceController;
 import org.jbei.ice.lib.group.GroupController;
 import org.jbei.ice.lib.search.blast.BlastPlus;
@@ -147,14 +147,7 @@ public class EntryCreator {
         permissionDAO.create(permission);
     }
 
-    /**
-     * Creates a new entry using the passed data
-     *
-     * @param userId unique identifier for user creating entry
-     * @param part   data used to create new part
-     * @return new part data id and record id information
-     */
-    public PartData createPart(String userId, PartData part) {
+    public long createPart(String userId, PartData part) {
         Entry entry = InfoToModelFactory.infoToEntry(part);
         Account account = DAOFactory.getAccountDAO().getByEmail(userId);
 
@@ -191,10 +184,7 @@ public class EntryCreator {
         }
 
         entry = createEntry(account, entry, part.getAccessPermissions());
-        PartData partData = new PartData(part.getType());
-        partData.setId(entry.getId());
-        partData.setRecordId(entry.getRecordId());
-        return partData;
+        return entry.getId();
     }
 
     public long copyPart(String userId, String sourceRecordId) {

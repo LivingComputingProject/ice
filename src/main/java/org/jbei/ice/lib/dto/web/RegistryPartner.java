@@ -11,7 +11,7 @@ import org.jbei.ice.storage.model.RemotePartner;
 public class RegistryPartner implements IDataTransferModel {
 
     private long id;
-    private RemotePartnerStatus status;
+    private String status;
     private String name;
     private String url;
     private String apiKey;
@@ -31,11 +31,11 @@ public class RegistryPartner implements IDataTransferModel {
         this.id = id;
     }
 
-    public RemotePartnerStatus getStatus() {
+    public String getStatus() {
         return status;
     }
 
-    public void setStatus(RemotePartnerStatus status) {
+    public void setStatus(String status) {
         this.status = status;
     }
 

@@ -3,21 +3,22 @@ package org.jbei.ice.lib.access;
 import org.jbei.ice.lib.account.AccountController;
 import org.jbei.ice.lib.bulkupload.BulkUploadAuthorization;
 import org.jbei.ice.lib.common.logging.Logger;
-import org.jbei.ice.lib.dto.access.AccessPermission;
 import org.jbei.ice.lib.dto.entry.EntryType;
 import org.jbei.ice.lib.dto.entry.PartData;
 import org.jbei.ice.lib.dto.folder.FolderAuthorization;
 import org.jbei.ice.lib.dto.folder.FolderDetails;
+import org.jbei.ice.lib.dto.permission.AccessPermission;
 import org.jbei.ice.lib.entry.EntryAuthorization;
 import org.jbei.ice.lib.group.GroupController;
 import org.jbei.ice.storage.DAOException;
 import org.jbei.ice.storage.DAOFactory;
-import org.jbei.ice.storage.hibernate.dao.*;
+import org.jbei.ice.storage.hibernate.dao.FolderDAO;
+import org.jbei.ice.storage.hibernate.dao.GroupDAO;
+import org.jbei.ice.storage.hibernate.dao.PermissionDAO;
 import org.jbei.ice.storage.model.*;
 
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 /**
@@ -32,7 +33,6 @@ public class PermissionsController {
     private final FolderDAO folderDAO;
     private final PermissionDAO dao;
     private final GroupDAO groupDAO;
-    private final AccountDAO accountDAO;
 
     public PermissionsController() {
         accountController = new AccountController();
@@ -40,7 +40,6 @@ public class PermissionsController {
         folderDAO = DAOFactory.getFolderDAO();
         dao = DAOFactory.getPermissionDAO();
         groupDAO = DAOFactory.getGroupDAO();
-        accountDAO = DAOFactory.getAccountDAO();
     }
 
     public Permission addPermission(String userId, AccessPermission access) {
@@ -90,7 +89,7 @@ public class PermissionsController {
         switch (access.getArticle()) {
             case ACCOUNT:
             default:
-                account = accountDAO.get(access.getArticleId());
+                account = accountController.get(access.getArticleId());
                 break;
 
             case GROUP:
@@ -164,7 +163,7 @@ public class PermissionsController {
         switch (access.getArticle()) {
             case ACCOUNT:
             default:
-                account = accountDAO.get(access.getArticleId());
+                account = accountController.get(access.getArticleId());
                 break;
 
             case GROUP:
@@ -296,13 +295,6 @@ public class PermissionsController {
                     group.getLabel()));
         }
 
-        // remote accounts
-        RemoteShareModelDAO remoteShareModelDAO = DAOFactory.getRemoteShareModelDAO();
-        List<RemoteShareModel> remoteAccessModelList = remoteShareModelDAO.getByFolder(folder);
-        for (RemoteShareModel remoteShareModel : remoteAccessModelList) {
-            accessPermissions.add(remoteShareModel.toDataTransferObject());
-        }
-
         return accessPermissions;
     }
 
@@ -310,8 +302,8 @@ public class PermissionsController {
      * Propagates the permissions for the folder to the contained entries
      *
      * @param userId unique identifier for account of user requesting action that led to this call
-     * @param folder folder user permissions are being propagated
-     * @param add    true if folder is to be added, false otherwise
+     * @param folder  folder user permissions are being propagated
+     * @param add     true if folder is to be added, false otherwise
      * @return true if action permission was propagated successfully
      */
     public boolean propagateFolderPermissions(String userId, Folder folder, boolean add) {
@@ -449,5 +441,61 @@ public class PermissionsController {
             return;
 
         dao.delete(permission);
+    }
+
+    public void removeFolderPermission(String userId, long folderId, long permissionId) {
+        Folder folder = folderDAO.get(folderId);
+        if (folder == null)
+            return;
+
+        Permission permission = dao.get(permissionId);
+        if (permission == null)
+            return;
+
+        FolderAuthorization folderAuthorization = new FolderAuthorization();
+        folderAuthorization.expectWrite(userId, folder);
+
+        if (permission.getFolder().getId() != folderId)
+            return;
+
+        dao.delete(permission);
+    }
+
+    public ArrayList<AccessPermission> getMatchingGroupsOrUsers(String userId, String val, int limit) {
+        // groups have higher priority
+        Set<Group> groups = groupController.getMatchingGroups(userId, val, limit);
+        ArrayList<AccessPermission> accessPermissions = new ArrayList<>();
+
+        int accountLimit;
+        if (groups == null)
+            accountLimit = limit;
+        else {
+            for (Group group : groups) {
+                AccessPermission permission = new AccessPermission();
+                permission.setDisplay(group.getLabel());
+                permission.setArticle(AccessPermission.Article.GROUP);
+                permission.setArticleId(group.getId());
+                accessPermissions.add(permission);
+            }
+            accountLimit = (limit - groups.size());
+        }
+
+        if (accountLimit == 0)
+            return accessPermissions;
+
+        // check account match
+        Set<Account> accounts = DAOFactory.getAccountDAO().getMatchingAccounts(val, accountLimit);
+        if (accounts == null)
+            return accessPermissions;
+
+        for (Account userAccount : accounts) {
+            AccessPermission permission = new AccessPermission();
+            permission.setDisplay(userAccount.getFullName());
+            permission.setArticle(AccessPermission.Article.ACCOUNT);
+            permission.setArticleId(userAccount.getId());
+            accessPermissions.add(permission);
+        }
+
+        return accessPermissions;
     }
 }

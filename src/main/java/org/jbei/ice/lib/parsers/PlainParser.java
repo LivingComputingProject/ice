@@ -13,12 +13,13 @@ import org.jbei.ice.lib.dto.DNASequence;
  * @author Zinovii Dmytriv, Timothy Ham
  */
 public class PlainParser extends AbstractParser {
+    private static final String PLAIN_PARSER = "Plain";
 
     @Override
     public DNASequence parse(String textSequence) throws InvalidFormatParserException {
         textSequence = cleanSequence(textSequence);
 
-        SymbolList sl;
+        SymbolList sl = null;
         try {
             sl = new SimpleSymbolList(DNATools.getDNA().getTokenization("token"), textSequence
                     .replaceAll("\\s+", "").replaceAll("[\\.|~]", "-").replaceAll("[0-9]", ""));
@@ -26,5 +27,15 @@ public class PlainParser extends AbstractParser {
             throw new InvalidFormatParserException("Couldn't parse Plain sequence!", e);
         }
         return new DNASequence(sl.seqString());
+    }
+
+    @Override
+    public DNASequence parse(byte[] bytes) throws InvalidFormatParserException {
+        return null;
+    }
+
+    @Override
+    public String getName() {
+        return PLAIN_PARSER;
     }
 }

@@ -14,7 +14,6 @@ import org.jbei.ice.lib.common.logging.Logger;
 import org.jbei.ice.lib.dto.entry.EntryType;
 import org.jbei.ice.lib.dto.entry.PartData;
 import org.jbei.ice.lib.dto.entry.Visibility;
-import org.jbei.ice.lib.dto.search.FieldFilter;
 import org.jbei.ice.lib.dto.search.SearchQuery;
 import org.jbei.ice.lib.dto.search.SearchResult;
 import org.jbei.ice.lib.dto.search.SearchResults;
@@ -85,25 +84,13 @@ public class HibernateSearch {
         Query visibilityQuery = qb.keyword().onField("visibility").matching(Visibility.OK.getValue()).createQuery();
         builder.add(visibilityQuery, BooleanClause.Occur.FILTER);
 
-        // bio safety level
+        // biosafety
         BioSafetyOption option = searchQuery.getBioSafetyOption();
         if (option != null) {
             TermContext bslContext = qb.keyword();
             Query biosafetyQuery =
                     bslContext.onField("bioSafetyLevel").ignoreFieldBridge().matching(option.getIntValue()).createQuery();
             builder.add(biosafetyQuery, BooleanClause.Occur.FILTER);
-        }
-
-        // check filter filters
-        if (searchQuery.getFieldFilters() != null && !searchQuery.getFieldFilters().isEmpty()) {
-            for (FieldFilter fieldFilter : searchQuery.getFieldFilters()) {
-                String searchField = SearchFieldFactory.searchFieldForEntryField(fieldFilter.getField());
-                if (StringUtils.isEmpty(searchField))
-                    continue;
-
-                Query filterQuery = qb.keyword().onField(searchField).matching(fieldFilter.getFilter()).createQuery();
-                builder.add(filterQuery, BooleanClause.Occur.MUST);
-            }
         }
 
         // check if there is a blast results
@@ -169,35 +156,27 @@ public class HibernateSearch {
      * @param blastResults raw results of the blast search
      * @return wrapper around list of filtered results
      */
-    public SearchResults filterBlastResults(String userId, int start, int count, SearchQuery searchQuery,
+    public SearchResults filterBlastResults(String userId, int start, int count,
                                             final HashMap<String, SearchResult> blastResults) {
         Session session = HibernateUtil.getSessionFactory().getCurrentSession();
         FullTextSession fullTextSession = Search.getFullTextSession(session);
 
         QueryBuilder qb = fullTextSession.getSearchFactory().buildQueryBuilder().forEntity(Entry.class).get();
         Query query = qb.keyword().onField("visibility").matching(Visibility.OK.getValue()).createQuery();
-
         // todo : there is a limit of 1024 boolean clauses so return only return top blast results
         BooleanQuery.Builder builder = new BooleanQuery.Builder();
         builder.add(query, BooleanClause.Occur.FILTER);
 
+        for (String id : blastResults.keySet()) {
+            Query blastQuery = qb.keyword().onField("id").matching(id).createQuery();
+            builder.add(new BooleanClause(blastQuery, BooleanClause.Occur.FILTER));
+        }
+
         // wrap Lucene query in a org.hibernate.Query
-        Class<?>[] classes = SearchFieldFactory.classesForTypes(searchQuery.getEntryTypes());
-        FullTextQuery fullTextQuery = fullTextSession.createFullTextQuery(builder.build(), classes);
+        FullTextQuery fullTextQuery = fullTextSession.createFullTextQuery(builder.build(), Entry.class);
 
         // enable security filter if an admin
-        checkEnableSecurityFilter(userId, fullTextQuery);
-
-        // enable has attachment/sequence/sample (if needed)
-        checkEnableHasAttribute(fullTextQuery, searchQuery.getParameters());
-
-        // bio-safety level
-        if (searchQuery.getBioSafetyOption() != null) {
-            TermContext levelContext = qb.keyword();
-            Query biosafetyQuery = levelContext.onField("bioSafetyLevel").ignoreFieldBridge()
-                    .matching(searchQuery.getBioSafetyOption().getValue()).createQuery();
-            builder.add(biosafetyQuery, BooleanClause.Occur.MUST);
-        }
+        fullTextQuery = checkEnableSecurityFilter(userId, fullTextQuery);
 
         // execute search
         fullTextQuery.setProjection("id");
@@ -212,11 +191,15 @@ public class HibernateSearch {
             resultSet.add(result.toString());
         }
 
-        Iterator<String> iterator = blastResults.keySet().iterator();
-        while (iterator.hasNext()) {
-            String key = iterator.next();
+        HashSet<String> toRemove = new HashSet<>();
+        for (String key : blastResults.keySet()) {
             if (!resultSet.contains(key))
-                iterator.remove();
+                toRemove.add(key);
+        }
+
+        // remove
+        for (String remove : toRemove) {
+            blastResults.remove(remove);
         }
 
         SearchResult searchResults[] = new SearchResult[count];

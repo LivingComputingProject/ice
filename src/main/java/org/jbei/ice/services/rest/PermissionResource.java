@@ -1,35 +1,42 @@
 package org.jbei.ice.services.rest;
 
-import org.jbei.ice.lib.access.RemoteAccess;
-import org.jbei.ice.lib.dto.access.RemoteAccessPermission;
-import org.jbei.ice.lib.dto.web.RegistryPartner;
+import java.util.ArrayList;
 
-import javax.ws.rs.Consumes;
-import javax.ws.rs.POST;
+import javax.ws.rs.DefaultValue;
+import javax.ws.rs.GET;
 import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
+import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
+import org.jbei.ice.lib.access.PermissionsController;
+import org.jbei.ice.lib.dto.permission.AccessPermission;
+
 /**
- * Resource for interacting with permissions.
- * Currently only exposing a means for adding a remote permission
- *
  * @author Hector Plahar
  */
-@Path("permissions")
+@Path("/permission")
 public class PermissionResource extends RestResource {
 
+    private PermissionsController controller = new PermissionsController();
+
     /**
-     * Add a remote access from a partner in the web of registries
+     * @param val
+     * @param limit
+     * @return matching groups and users for autocomplete widget
      */
-    @POST
-    @Path("/remote")
-    @Consumes(MediaType.APPLICATION_JSON)
+    @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public Response addRemoteAccess(RemoteAccessPermission accessPermission) {
-        RegistryPartner partner = requireWebPartner();
-        RemoteAccess remoteAccess = new RemoteAccess();
-        return super.respond(remoteAccess.add(partner, accessPermission));
+    @Path("/autocomplete")
+    public Response autoComplete(@QueryParam("val") final String val,
+            @DefaultValue("8") @QueryParam("limit") final int limit) {
+        final String userId = getUserId();
+        final ArrayList<AccessPermission> result = controller.getMatchingGroupsOrUsers(userId, val,
+                limit);
+        if (result == null) {
+            return super.respond(Response.Status.INTERNAL_SERVER_ERROR);
+        }
+        return super.respond(Response.Status.OK, result);
     }
 }

@@ -9,8 +9,9 @@ import java.util.Map;
  */
 public abstract class RestClient {
 
+    protected final String AUTHENTICATION_PARAM_NAME = "X-ICE-Authentication-SessionId";
+
     public abstract <T> T get(String url, String path, Class<T> clazz, Map<String, Object> queryParams);
 
-    public abstract <T> T post(String url, String resourcePath, Object object, Class<T> responseClass,
-                               Map<String, Object> queryParams);
+    public abstract <T> T post(String url, String resourcePath, Object object, Class<T> responseClass);
 }

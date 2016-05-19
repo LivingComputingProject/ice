@@ -1,13 +1,12 @@
 package org.jbei.ice.lib.folder;
 
-import org.jbei.ice.lib.account.AccountTransfer;
 import org.jbei.ice.lib.dto.folder.FolderDetails;
-import org.jbei.ice.lib.dto.folder.FolderType;
 import org.jbei.ice.lib.group.GroupController;
 import org.jbei.ice.storage.DAOFactory;
 import org.jbei.ice.storage.hibernate.dao.FolderDAO;
-import org.jbei.ice.storage.hibernate.dao.RemoteAccessModelDAO;
-import org.jbei.ice.storage.model.*;
+import org.jbei.ice.storage.model.Account;
+import org.jbei.ice.storage.model.Folder;
+import org.jbei.ice.storage.model.Group;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -15,20 +14,14 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * ICE Folders
- *
  * @author Hector Plahar
  */
 public class Folders {
 
     private final FolderDAO dao;
-    private final String userId;
-    private final RemoteAccessModelDAO remoteAccessModelDAO;
 
-    public Folders(String userId) {
+    public Folders() {
         this.dao = DAOFactory.getFolderDAO();
-        this.userId = userId;
-        this.remoteAccessModelDAO = DAOFactory.getRemoteAccessModelDAO();
     }
 
     /**
@@ -36,7 +29,7 @@ public class Folders {
      *
      * @return list of folders
      */
-    public ArrayList<FolderDetails> getCanEditFolders() {
+    public ArrayList<FolderDetails> getCanEditFolders(String userId) {
         Account account = DAOFactory.getAccountDAO().getByEmail(userId);
         Set<Group> accountGroups = new HashSet<>(account.getGroups());
         GroupController controller = new GroupController();
@@ -47,33 +40,9 @@ public class Folders {
         ArrayList<FolderDetails> result = new ArrayList<>();
 
         for (Folder folder : folders) {
-            FolderDetails details = folder.toDataTransferObject();
-            if (folder.getType() == FolderType.REMOTE) {
-                RemoteAccessModel model = remoteAccessModelDAO.getByFolder(account, folder);
-                if (model == null) {
-                    result.add(details);
-                    continue;
-                }
-
-                AccountTransfer owner = new AccountTransfer();
-                owner.setEmail(model.getRemoteClientModel().getEmail());
-                details.setOwner(owner);
-                RemotePartner remotePartner = model.getRemoteClientModel().getRemotePartner();
-                details.setRemotePartner(remotePartner.toDataTransferObject());
-            }
-
-            result.add(details);
+            result.add(folder.toDataTransferObject());
         }
 
         return result;
-    }
-
-    public List<FolderDetails> filter(String token, int limit) {
-        List<Folder> list = dao.filterByName(token, limit);
-        List<FolderDetails> results = new ArrayList<>();
-        for (Folder folder : list) {
-            results.add(folder.toDataTransferObject());
-        }
-        return results;
     }
 }

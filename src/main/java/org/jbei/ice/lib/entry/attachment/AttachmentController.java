@@ -19,7 +19,6 @@ import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.List;
 
 /**
  * ABI to manipulate {@link Attachment}s.
@@ -134,7 +133,7 @@ public class AttachmentController {
             delete(account, attachment);
     }
 
-    public List<Attachment> getByEntry(String userId, Entry entry) {
+    public ArrayList<Attachment> getByEntry(String userId, Entry entry) {
         entryAuthorization.expectRead(userId, entry);
         return dao.getByEntry(entry);
     }

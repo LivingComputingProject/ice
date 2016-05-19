@@ -2,9 +2,9 @@
 
 angular.module('ice.upload.controller', [])
     .controller('UploadController', function ($rootScope, $location, $scope, $uibModal, $cookieStore, $resource,
-                                              $stateParams, FileUploader, $http, UploadUtil, Util) {
-        //var sid = $cookieStore.get("sessionId");
-        //var upload = Upload(sid);
+                                              $stateParams, FileUploader, $http, Upload, UploadUtil, Util) {
+        var sid = $cookieStore.get("sessionId");
+        var upload = Upload(sid);
         var sheetData = [
             []
         ];
@@ -167,24 +167,28 @@ angular.module('ice.upload.controller', [])
                 var id = $scope.bulkUpload.id;
 
                 if (UploadUtil.indexToRestResource($scope.importType, col) === "attachment") {
-                    Util.remove("rest/uploads/" + id + "/entry/" + entryId + "/attachment", {}, function (result) {
-                        sheetData[row][col] = undefined;
-                        ht.setDataAtCell(row, col, undefined, 'loadData');
-                    });
+                    Upload(sid).deleteAttachment({importId: id, entryId: entryId},
+                        function (success) {
+                            sheetData[row][col] = undefined;
+                            ht.setDataAtCell(row, col, undefined, 'loadData');
+                        }, function (error) {
+                            console.error(error);
+                        });
                 } else {
                     //delete sequence
-                    Util.remove("'rest/uploads/" + id + "/entry/" + entryId + "/sequence", {}, function (result) {
-                        sheetData[row][col] = undefined;
-                        ht.setDataAtCell(row, col, undefined, 'loadData');
-                    });
+                    Upload(sid).deleteSequence({importId: $scope.bulkUpload.id, entryId: entryId},
+                        function (success) {
+                            sheetData[row][col] = undefined;
+                            ht.setDataAtCell(row, col, undefined, 'loadData');
+                        }, function (error) {
+                            console.error(error);
+                        });
                 }
             };
 
             var availableHeight, $window = $(window), $dataTable = $("#dataTable");
 
-            //
             // cell renderer for file upload
-            //
             var fileUploadRenderer = function (instance, td, row, col, prop, value, cellProperties) {
                 if (value) {
                     var $del = $('<i class="fa fa-trash-o delete_icon"></i>');
@@ -399,30 +403,31 @@ angular.module('ice.upload.controller', [])
                 $scope.saving = true;
                 if ($scope.bulkUpload.id === undefined) {
                     // create draft of specified type
-                    Util.update("rest/uploads", {type: $scope.importType}, {}, function (result) {
-                        $scope.bulkUpload.id = result.id;
-                        $scope.bulkUpload.lastUpdate = result.lastUpdate;
-                        $scope.bulkUpload.name = result.name;
+                    upload.create({type: $scope.importType})
+                        .$promise
+                        .then(function (result) {
+                            $scope.bulkUpload.id = result.id;
+                            $scope.bulkUpload.lastUpdate = result.lastUpdate;
+                            $scope.bulkUpload.name = result.name;
 
-                        console.log($scope.bulkUpload.id);
-                        $location.path("upload/" + $scope.bulkUpload.id, false);
-                        // then create entry and associate with draft
-                        createEntry(result.id, object, row, callback);
-                    });
+                            // then create entry and associate with draft
+                            createEntry(result.id, object, row, callback);
+                        });
                 } else {
                     // check if row being updated has existing entry
                     if (!object['id']) {
                         // create new entry for existing upload
                         createEntry($scope.bulkUpload.id, object, row, callback);
                     } else if (isRowEmpty(sheetData[row])) {
-                        Util.remove('rest/uploads/' + $scope.bulkUpload.id + '/entry/' + $scope.bulkUpload.entryIdData[row], {}, function (result) {
-                            $scope.saving = false;
-                        }, function (error) {
+                        upload.deleteEntry({
+                            importId: $scope.bulkUpload.id,
+                            entryId: $scope.bulkUpload.entryIdData[row]
+                        }, null, function () {
                             $scope.saving = false;
                         });
                     } else {
                         // update entry for existing upload
-                        Util.post('rest/uploads/' + $scope.bulkUpload.id + '/entry/' + object.id, object,
+                        upload.updateEntry({importId: $scope.bulkUpload.id, entryId: object.id}, object,
                             function (updatedEntry) {
                                 $scope.bulkUpload.lastUpdate = updatedEntry.modificationTime;
 
@@ -465,7 +470,7 @@ angular.module('ice.upload.controller', [])
                     entryList[entryList.length + 1] = o;
                 }
 
-                Util.update('rest/uploads/' + $scope.bulkUpload.id, {entryList: entryList}, {}, function (success) {
+                upload.updateList({importId: $scope.bulkUpload.id}, {entryList: entryList}, function (success) {
                     for (var j = 0; j < success.entryList.length; j += 1) {
                         var part = success.entryList[j];
 
@@ -519,14 +524,16 @@ angular.module('ice.upload.controller', [])
 
                 if ($scope.bulkUpload.id === undefined) {
                     // first create bulk upload
-                    Util.update('rest/uploads', {type: $scope.importType}, {}, function (result) {
+                    upload.create({type: $scope.importType}, function (result) {
                         $scope.bulkUpload.id = result.id;
                         $scope.bulkUpload.lastUpdate = result.lastUpdate;
                         $scope.bulkUpload.name = result.name;
-                        $location.path("upload/" + $scope.bulkUpload.id, false);
+                        //                            $location.path("upload/" + result.id, false);
 
                         // then update the list
                         updateEntryList(objects);
+                    }, function (error) {
+                        console.error("error creating bulk upload", error);
                     });
                 } else {
                     updateEntryList(objects);
@@ -581,7 +588,7 @@ angular.module('ice.upload.controller', [])
             };
 
             var createEntry = function (importId, object, row, callback) {
-                Util.update('rest/uploads/' + importId + '/entry', object, {},
+                upload.createEntry({importId: importId}, object,
                     function (createdEntry) {
                         $scope.bulkUpload.entryIdData[row] = createdEntry.id;
                         if (createdEntry.linkedParts && createdEntry.linkedParts.length) {
@@ -638,8 +645,7 @@ angular.module('ice.upload.controller', [])
                 columnSorting: false,
                 contextMenu: true,
                 afterRemoveRow: function (row) {
-                    Util.remove("rest/uploads/" + $scope.bulkUpload.id + "/entry/" + $scope.bulkUpload.entryIdData[row],
-                        {});
+                    upload.deleteEntry({importId: $scope.bulkUpload.id, entryId: $scope.bulkUpload.entryIdData[row]});
                 }
             };
 
@@ -738,7 +744,7 @@ angular.module('ice.upload.controller', [])
 
                 Util.update("rest/uploads/" + $scope.bulkUpload.id + "/status", tmp, {},
                     function (result) {
-                        if (result.success) {
+                        if (error.isSuccess) {
                             $scope.submitting = false;
                             $location.path('/folders/personal');
                         }
@@ -783,7 +789,7 @@ angular.module('ice.upload.controller', [])
                     // update name on the server if a bulk upload has already been created
                     if ($scope.bulkUpload.id) {
                         var tmp = {id: $scope.bulkUpload.id, name: newName};
-                        Util.update('rest/uploads/' + $scope.bulkUpload.id + '/name', tmp, {}, function (result) {
+                        Upload(sid).rename({importId: $scope.bulkUpload.id}, tmp, function (result) {
                             $scope.bulkUpload.name = result.name;
                             $scope.bulkUpload.lastUpdate = result.lastUpdate;
                             $scope.$emit("BulkUploadNameChange", tmp);
@@ -813,17 +819,50 @@ angular.module('ice.upload.controller', [])
         // retrieve
         $scope.uploadEntries = [];
 
+        var generateLinkOptions = function (type) {
+            switch (type) {
+                case 'plasmid':
+                    $scope.linkOptions = [
+                        {type: 'part', display: 'Part'},
+                        {type: 'plasmid', display: 'Plasmid'}
+                    ];
+                    break;
+
+                case 'part':
+                    $scope.linkOptions = [
+                        {type: 'part', display: 'Part'}
+                    ];
+                    break;
+
+                case 'strain':
+                    $scope.linkOptions = [
+                        {type: 'part', display: 'Part'},
+                        {type: 'plasmid', display: 'Plasmid'},
+                        {type: 'strain', display: 'Strain'}
+                    ];
+                    break;
+
+                case 'arabidopsis':
+                    $scope.linkOptions = [
+                        {type: 'part', display: 'Part'},
+                        {type: 'arabidopsis', display: 'Arabidopsis Seed'}
+                    ];
+                    break;
+            }
+        };
+
         // retrieve the contents of an import if parameter is a number
         if (!isNaN($stateParams.type)) {
             $scope.importType = undefined;
             asyncLoop({
                 functionToLoop: function (loop, start) {
-                    Util.get("rest/uploads/" + $stateParams.type,
+                    upload.get(
+                        {importId: $stateParams.type, offset: start, limit: 40},
                         function (result) {
                             $scope.bulkUpload.name = result.name;
                             $scope.bulkUpload.status = result.status;
                             $scope.importType = result.type.toLowerCase();
-                            $scope.linkOptions = UploadUtil.generateLinkOptions($scope.importType);
+                            generateLinkOptions($scope.importType);
 
                             if (start === 0)
                                 createSheet();
@@ -834,7 +873,6 @@ angular.module('ice.upload.controller', [])
                             var l = $scope.bulkUpload.entryIdData.length;    // number of existing entries
 
                             if (result.entryList && result.entryList.length) {
-
                                 var dataSchema = UploadUtil.getDataSchema($scope.importType);
 
                                 // for each entry object (row)
@@ -914,31 +952,30 @@ angular.module('ice.upload.controller', [])
                                 loop(start + result.entryList.length);
                             }
                             angular.element("#dataTable").handsontable('render');
-                        }, {offset: start, limit: 40});
+                        });
                 }
             });
         } else {
             //
             $scope.importType = $stateParams.type;
-            $scope.linkOptions = UploadUtil.generateLinkOptions($scope.importType);
+            generateLinkOptions($scope.importType);
             createSheet();
         }
     })
-    .controller('BulkUploadRejectModalController', function ($scope, $cookieStore, $location, $uibModalInstance,
-                                                             upload, Util) {
+    .controller('BulkUploadRejectModalController', function ($scope, $cookieStore, $location, $uibModalInstance, upload, Upload) {
         $scope.rejectUpload = function () {
             $scope.submitting = true;
+            var sid = $cookieStore.get("sessionId");
 
-            Util.update('rest/uploads/' + upload.id + '/status', {
-                id: upload.id,
-                status: 'IN_PROGRESS'
-            }, function (result) {
+            Upload(sid).updateStatus({importId: upload.id}, {id: upload.id, status: 'IN_PROGRESS'}, function (result) {
                 $location.path('/folders/pending');
                 $uibModalInstance.close();
                 $scope.submitting = false;
+                // todo : send optional message if any
             }, function (error) {
+                console.error(error);
                 $scope.submitting = false;
-            });
+            })
         };
 
         $scope.cancel = function () {
@@ -946,7 +983,7 @@ angular.module('ice.upload.controller', [])
         };
     })
     .controller('BulkUploadModalController', function ($window, $scope, $location, $cookieStore, $routeParams, uploadId,
-                                                       $uibModalInstance, FileUploader, addType, linkedAddType, Util) {
+                                                       $uibModalInstance, FileUploader, addType, linkedAddType, Folders) {
         var sid = $cookieStore.get("sessionId");
         $scope.addType = addType;
 
@@ -955,7 +992,7 @@ angular.module('ice.upload.controller', [])
         //
         $scope.resetBulkUpload = function () {
             // expected folders that can be deleted have type "PRIVATE" and "UPLOAD"
-            Util.remove("rest/folders/" + uploadId, {folderId: uploadId, type: "UPLOAD"}, function () {
+            Folders().delete({folderId: uploadId, type: "UPLOAD"}, function (result) {
                 $location.path("/upload/" + addType);
                 $uibModalInstance.dismiss('cancel');
             }, function (error) {
@@ -1036,11 +1073,13 @@ angular.module('ice.upload.controller', [])
                 url += "?link=" + linkedAddType;
             $window.open(url, "_self");
         }
-    }).controller('BulkUploadPermissionsController', function ($scope, $cookieStore, $location, $uibModalInstance,
-                                                               upload, Util) {
+    }).controller('BulkUploadPermissionsController', function ($scope, $cookieStore, $location, $uibModalInstance, upload, Upload, Folders, Permission) {
         $scope.cancel = function () {
             $uibModalInstance.dismiss('cancel');
         };
+
+        var sessionId = $cookieStore.get("sessionId");
+        var service = Upload(sessionId);
 
         // init
         var panes = $scope.panes = [];
@@ -1051,7 +1090,7 @@ angular.module('ice.upload.controller', [])
 
         // if upload.id exists, then retrieve the permissions for the upload
         if (upload.id) {
-            Util.list('rest/uploads/' + upload.id + '/permissions', function (result) {
+            service.getPermissions({importId: upload.id}, function (result) {
                 angular.forEach(result, function (item) {
                     if (item.type == 'WRITE_UPLOAD')
                         $scope.writePermissions.push(item);
@@ -1063,6 +1102,8 @@ angular.module('ice.upload.controller', [])
                 $scope.panes.push({title: 'Write', count: $scope.writePermissions.length});
                 $scope.activePermissions = $scope.readPermissions;
 
+            }, function (error) {
+                console.error(error);
             });
         }
 
@@ -1097,31 +1138,34 @@ angular.module('ice.upload.controller', [])
         };
 
         var removePermission = function (permissionId) {
-            Util.remove('rest/uploads/' + $scope.upload.id + '/permissions/' + permissionId, {}, function (result) {
-                if (!result)
-                    return;
-                // check which pane is selected
-                var pane;
-                if ($scope.panes[0].selected)
-                    pane = $scope.panes[0];
-                else
-                    pane = $scope.panes[1];
+            service.removePermission({importId: $scope.upload.id, pId: permissionId},
+                function (result) {
+                    if (!result)
+                        return;
+                    // check which pane is selected
+                    var pane;
+                    if ($scope.panes[0].selected)
+                        pane = $scope.panes[0];
+                    else
+                        pane = $scope.panes[1];
 
-                var i = -1;
+                    var i = -1;
 
-                for (var idx = 0; idx < $scope.activePermissions.length; idx += 1) {
-                    if (permissionId == $scope.activePermissions[idx].id) {
-                        i = idx;
-                        break;
+                    for (var idx = 0; idx < $scope.activePermissions.length; idx += 1) {
+                        if (permissionId == $scope.activePermissions[idx].id) {
+                            i = idx;
+                            break;
+                        }
                     }
-                }
 
-                if (i == -1)
-                    return;
+                    if (i == -1)
+                        return;
 
-                $scope.activePermissions.splice(i, 1);
-                pane.count = $scope.activePermissions.length;
-            });
+                    $scope.activePermissions.splice(i, 1);
+                    pane.count = $scope.activePermissions.length;
+                }, function (error) {
+
+                });
         };
 
         $scope.addRemovePermission = function (permission) {
@@ -1142,23 +1186,28 @@ angular.module('ice.upload.controller', [])
             }
 
             // todo : if no upload identified
-            Util.post('rest/uploads/' + $scope.upload.id + '/permissions', permission, function (result) {
-                if (!result) {
-                    console.error("Permission creation error");
-                    return;
-                }
+            service.addPermission({importId: $scope.upload.id},
+                permission,
+                function (result) {
+                    if (!result) {
+                        console.error("Permission creation error");
+                        return;
+                    }
 
-                console.log(result);
-                if (result.type == 'READ_UPLOAD') {
-                    $scope.readPermissions.push(result);
-                    $scope.activePermissions = $scope.readPermissions;
-                } else if (result.type == 'WRITE_UPLOAD') {
-                    $scope.writePermissions.push(result);
-                    $scope.activePermissions = $scope.writePermissions;
-                }
-                permission.id = result.id;
-                pane.count = $scope.activePermissions.length;
-            });
+                    console.log(result);
+                    if (result.type == 'READ_UPLOAD') {
+                        $scope.readPermissions.push(result);
+                        $scope.activePermissions = $scope.readPermissions;
+                    } else if (result.type == 'WRITE_UPLOAD') {
+                        $scope.writePermissions.push(result);
+                        $scope.activePermissions = $scope.writePermissions;
+                    }
+                    permission.id = result.id;
+                    pane.count = $scope.activePermissions.length;
+                },
+                function (error) {
+                    console.error(error);
+                });
         };
 
         $scope.enablePublicRead = function (folder) {
@@ -1178,15 +1227,14 @@ angular.module('ice.upload.controller', [])
             }
 
             $scope.filtering = true;
-            // todo
-            //Permission().filterUsersAndGroups({limit: 10, val: val},
-            //    function (result) {
-            //        $scope.accessPermissions = result;
-            //        $scope.filtering = false;
-            //    }, function (error) {
-            //        console.error(error);
-            //        $scope.filtering = false;
-            //        $scope.accessPermissions = undefined;
-            //    });
+            Permission().filterUsersAndGroups({limit: 10, val: val},
+                function (result) {
+                    $scope.accessPermissions = result;
+                    $scope.filtering = false;
+                }, function (error) {
+                    console.error(error);
+                    $scope.filtering = false;
+                    $scope.accessPermissions = undefined;
+                });
         };
     });

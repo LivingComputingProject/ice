@@ -1,7 +1,6 @@
 package org.jbei.ice.lib.dto;
 
 import org.jbei.ice.lib.account.AccountTransfer;
-import org.jbei.ice.lib.dto.web.RegistryPartner;
 import org.jbei.ice.storage.IDataTransferModel;
 
 /**
@@ -12,8 +11,8 @@ public class History implements IDataTransferModel {
     private long id;
     private String action;
     private String userId;
+    private boolean localUser;
     private AccountTransfer account;
-    private RegistryPartner partner;
     private long time;
 
     public long getId() {
@@ -40,6 +39,14 @@ public class History implements IDataTransferModel {
         this.userId = userId;
     }
 
+    public boolean isLocalUser() {
+        return localUser;
+    }
+
+    public void setLocalUser(boolean localUser) {
+        this.localUser = localUser;
+    }
+
     public AccountTransfer getAccount() {
         return account;
     }
@@ -54,13 +61,5 @@ public class History implements IDataTransferModel {
 
     public void setTime(long time) {
         this.time = time;
-    }
-
-    public RegistryPartner getPartner() {
-        return partner;
-    }
-
-    public void setPartner(RegistryPartner partner) {
-        this.partner = partner;
     }
 }

@@ -27,8 +27,8 @@ import java.util.Set;
 @SuppressWarnings("unchecked")
 public class PermissionDAO extends HibernateRepository<Permission> {
 
-    public boolean hasPermission(Entry entry, Folder folder, BulkUpload upload, Account account, Group group,
-                                 boolean canRead, boolean canWrite) {
+    public boolean hasPermission(Entry entry, Folder folder, BulkUpload upload, Account account, Group group, boolean canRead,
+                                 boolean canWrite) {
         try {
             Session session = currentSession();
             Criteria criteria = session.createCriteria(Permission.class)
@@ -73,7 +73,8 @@ public class PermissionDAO extends HibernateRepository<Permission> {
     public boolean hasPermissionMulti(Entry entry, Set<Folder> folders, Account account, Set<Group> groups,
                                       boolean canRead, boolean canWrite) {
         try {
-            Criteria criteria = currentSession().createCriteria(Permission.class)
+            Session session = currentSession();
+            Criteria criteria = session.createCriteria(Permission.class)
                     .add(Restrictions.eq("canWrite", canWrite))
                     .add(Restrictions.eq("canRead", canRead));
 
@@ -106,25 +107,19 @@ public class PermissionDAO extends HibernateRepository<Permission> {
         }
     }
 
-    public Permission retrievePermission(Entry entry, Folder folder, BulkUpload upload, Account account, Group group,
-                                         boolean canRead, boolean canWrite) {
+    public Permission retrievePermission(Entry entry, Folder folder, BulkUpload upload, Account account, Group group, boolean canRead,
+                                         boolean canWrite) {
         try {
             Criteria criteria = createPermissionCriteria(entry, folder, upload, account, group, canRead, canWrite);
-            List list = criteria.list();
-            if (list == null || list.isEmpty())
-                return null;
-            if (list.size() > 1)
-                Logger.error("permission query did not return unique result. returning first result");
-
-            return (Permission) list.get(0);
+            return (Permission) criteria.uniqueResult();
         } catch (HibernateException e) {
             Logger.error(e);
             throw new DAOException(e);
         }
     }
 
-    protected Criteria createPermissionCriteria(Entry entry, Folder folder, BulkUpload upload, Account account,
-                                                Group group, boolean canRead, boolean canWrite) {
+    protected Criteria createPermissionCriteria(Entry entry, Folder folder, BulkUpload upload, Account account, Group group,
+                                                boolean canRead, boolean canWrite) {
         Session session = currentSession();
         Criteria criteria = session.createCriteria(Permission.class)
                 .add(Restrictions.eq("canWrite", canWrite))
@@ -157,8 +152,8 @@ public class PermissionDAO extends HibernateRepository<Permission> {
         return criteria;
     }
 
-    public void removePermission(Entry entry, Folder folder, BulkUpload upload, Account account, Group group,
-                                 boolean canRead, boolean canWrite) {
+    public void removePermission(Entry entry, Folder folder, BulkUpload upload, Account account, Group group, boolean canRead,
+                                 boolean canWrite) {
         Criteria criteria = createPermissionCriteria(entry, folder, upload, account, group, canRead, canWrite);
         List list = criteria.list();
         if (list == null || list.isEmpty())

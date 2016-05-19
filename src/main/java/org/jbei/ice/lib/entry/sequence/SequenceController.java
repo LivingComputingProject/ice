@@ -2,16 +2,13 @@ package org.jbei.ice.lib.entry.sequence;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.jbei.ice.lib.access.PermissionException;
 import org.jbei.ice.lib.access.PermissionsController;
-import org.jbei.ice.lib.account.TokenHash;
 import org.jbei.ice.lib.common.logging.Logger;
 import org.jbei.ice.lib.config.ConfigurationController;
 import org.jbei.ice.lib.dto.*;
 import org.jbei.ice.lib.dto.entry.EntryType;
 import org.jbei.ice.lib.dto.entry.SequenceInfo;
 import org.jbei.ice.lib.dto.entry.Visibility;
-import org.jbei.ice.lib.dto.web.RegistryPartner;
 import org.jbei.ice.lib.entry.Entries;
 import org.jbei.ice.lib.entry.EntryAuthorization;
 import org.jbei.ice.lib.entry.EntryCreator;
@@ -45,9 +42,30 @@ public class SequenceController {
     private final Entries retriever;
 
     public SequenceController() {
-        dao = DAOFactory.getSequenceDAO();
+        dao = new SequenceDAO();
         authorization = new EntryAuthorization();
         retriever = new Entries();
+    }
+
+    public boolean parseAndSaveSequence(String userId, long partId, String sequenceString) {
+        DNASequence dnaSequence = parse(sequenceString);
+
+        if (dnaSequence == null || dnaSequence.getSequence().equals("")) {
+            String errorMsg = "Couldn't parse sequence file! Supported formats: "
+                    + GeneralParser.getInstance().availableParsersToString()
+                    + ". "
+                    + "If you believe this is an error, please contact the administrator with your file";
+            throw new IllegalArgumentException(errorMsg);
+        }
+
+        Sequence sequence = dnaSequenceToSequence(dnaSequence);
+        sequence.setSequenceUser(sequenceString);
+        Entry entry = DAOFactory.getEntryDAO().get(partId);
+        if (entry == null)
+            return false;
+
+        sequence.setEntry(entry);
+        return save(userId, sequence) != null;
     }
 
     // either or both recordId and entryType has to have a value
@@ -108,26 +126,14 @@ public class SequenceController {
         return result;
     }
 
-    public FeaturedDNASequence updateSequence(String userId, long entryId, FeaturedDNASequence featuredDNASequence,
-                                              boolean addFeatures) {
+    public FeaturedDNASequence updateSequence(String userId, long entryId, FeaturedDNASequence featuredDNASequence) {
         Entry entry = retriever.get(userId, entryId);
         if (entry == null) {
             return null;
         }
 
-        if (addFeatures) {
-            // expect existing sequence
-            Sequence existingSequence = dao.getByEntry(entry);
-            FeaturedDNASequence dnaSequence = sequenceToDNASequence(existingSequence);
-            featuredDNASequence.getFeatures().addAll(dnaSequence.getFeatures());
-            featuredDNASequence.setSequence(dnaSequence.getSequence());
-        }
-
+        featuredDNASequence.setSequence(featuredDNASequence.getSequence().replaceAll("[^A-Za-z]", ""));
         Sequence sequence = dnaSequenceToSequence(featuredDNASequence);
-        if (sequence.getSequenceFeatures() == null || sequence.getSequenceFeatures().isEmpty()) {
-            DNASequence dnaSequence = GeneralParser.getInstance().parse(featuredDNASequence.getSequence());
-            sequence = dnaSequenceToSequence(dnaSequence);
-        }
         sequence.setEntry(entry);
         if (!deleteSequence(userId, entryId))
             return null;
@@ -146,6 +152,7 @@ public class SequenceController {
      * @param sequence sequence to be updated
      * @return Saved Sequence.
      */
+
     protected Sequence update(String userId, Sequence sequence) {
         authorization.expectWrite(userId, sequence.getEntry());
         Sequence result;
@@ -158,13 +165,11 @@ public class SequenceController {
             result = dao.create(sequence);
         } else {
             String tmpDir = new ConfigurationController().getPropertyValue(ConfigurationKey.TEMPORARY_DIRECTORY);
-            if (!StringUtils.isEmpty(tmpDir)) {
-                String hash = oldSequence.getFwdHash();
-                try {
-                    Files.deleteIfExists(Paths.get(tmpDir, hash + ".png"));
-                } catch (IOException e) {
-                    Logger.warn(e.getMessage());
-                }
+            String hash = oldSequence.getFwdHash();
+            try {
+                Files.deleteIfExists(Paths.get(tmpDir, hash + ".png"));
+            } catch (IOException e) {
+                Logger.warn(e.getMessage());
             }
 
             oldSequence.setSequenceUser(sequence.getSequenceUser());
@@ -188,7 +193,7 @@ public class SequenceController {
 
         String tmpDir = new ConfigurationController().getPropertyValue(ConfigurationKey.TEMPORARY_DIRECTORY);
         dao.deleteSequence(sequence, tmpDir);
-//        BlastPlus.scheduleBlastIndexRebuildTask(true);  // todo : update is delete and save which is not right
+        BlastPlus.scheduleBlastIndexRebuildTask(true);
         return true;
     }
 
@@ -219,42 +224,6 @@ public class SequenceController {
         return byteStream.toString();
     }
 
-    // responds to remote requested entry sequence
-    public FeaturedDNASequence getRequestedSequence(RegistryPartner requestingPartner, String remoteUserId,
-                                                    String token, long entryId, long folderId) {
-        Entry entry = DAOFactory.getEntryDAO().get(entryId);
-        if (entry == null)
-            return null;
-
-        // see folderContents.getRemoteSharedContents
-        Folder folder = DAOFactory.getFolderDAO().get(folderId);      // folder that the entry is contained in
-        RemotePartner remotePartner = DAOFactory.getRemotePartnerDAO().getByUrl(requestingPartner.getUrl());
-
-        // check that the remote user has the right token
-        RemoteShareModel shareModel = DAOFactory.getRemoteShareModelDAO().get(remoteUserId, remotePartner, folder);
-        if (shareModel == null) {
-            Logger.error("Could not retrieve share model");
-            return null;
-        }
-
-        Permission permission = shareModel.getPermission(); // folder must match
-        if (permission.getFolder().getId() != folderId) {
-            String msg = "Shared folder does not match folder being requested";
-            Logger.error(msg);
-            throw new PermissionException(msg);
-        }
-
-        // validate access token
-        TokenHash tokenHash = new TokenHash();
-        String secret = tokenHash.encrypt(folderId + remotePartner.getUrl() + remoteUserId, token);
-        if (!secret.equals(shareModel.getSecret())) {
-            throw new PermissionException("Secret does not match");
-        }
-
-        // check that entry id is contained in folder
-        return getFeaturedSequence(entry, permission.isCanWrite());
-    }
-
     public FeaturedDNASequence retrievePartSequence(String userId, long recordId) {
         Entry entry = DAOFactory.getEntryDAO().get(recordId);
         if (entry == null)
@@ -263,16 +232,12 @@ public class SequenceController {
         if (!new PermissionsController().isPubliclyVisible(entry))
             authorization.expectRead(userId, entry);
 
-        boolean canEdit = authorization.canWriteThoroughCheck(userId, entry);
-        return getFeaturedSequence(entry, canEdit);
-    }
-
-    protected FeaturedDNASequence getFeaturedSequence(Entry entry, boolean canEdit) {
         Sequence sequence = dao.getByEntry(entry);
         if (sequence == null)
             return null;
 
         FeaturedDNASequence featuredDNASequence = sequenceToDNASequence(sequence);
+        boolean canEdit = authorization.canWriteThoroughCheck(userId, entry);
         featuredDNASequence.setCanEdit(canEdit);
         featuredDNASequence.setIdentifier(entry.getPartNumber());
         String uriPrefix = DAOFactory.getConfigurationDAO().get(ConfigurationKey.URI_PREFIX).getValue();
@@ -410,15 +375,13 @@ public class SequenceController {
                         annotationType = SequenceFeature.AnnotationType.valueOf(dnaFeature.getAnnotationType());
                     }
 
-                    String name = dnaFeature.getName().length() < 127 ? dnaFeature.getName()
-                            : dnaFeature.getName().substring(0, 123) + "...";
-                    Feature feature = new Feature(name, dnaFeature.getIdentifier(), featureSequence,
+                    Feature feature = new Feature(dnaFeature.getName(), dnaFeature.getIdentifier(), featureSequence, 0,
                             dnaFeature.getType());
                     if (dnaFeature.getLocations() != null && !dnaFeature.getLocations().isEmpty())
                         feature.setUri(dnaFeature.getLocations().get(0).getUri());
 
                     SequenceFeature sequenceFeature = new SequenceFeature(sequence, feature,
-                            dnaFeature.getStrand(), name,
+                            dnaFeature.getStrand(), dnaFeature.getName(),
                             dnaFeature.getType(), annotationType);
                     sequenceFeature.setUri(dnaFeature.getUri());
 
@@ -460,7 +423,7 @@ public class SequenceController {
         String sequenceString;
 
         try {
-            switch (type.toLowerCase()) {
+            switch (type) {
                 case "original":
                     sequenceString = sequence.getSequenceUser();
                     name = entry.getName() + ".seq";
@@ -481,17 +444,12 @@ public class SequenceController {
                     name = entry.getName() + ".fasta";
                     break;
 
-                case "sbol1":
-                    sequenceString = compose(sequence, new SBOLFormatter(true));
+                case "sbol":
+                    sequenceString = compose(sequence, new SBOLFormatter());
                     name = entry.getName() + ".xml";
                     break;
 
-                case "sbol2":
-                    sequenceString = compose(sequence, new SBOLFormatter(false));
-                    name = entry.getName() + ".xml";
-                    break;
-
-                case "pigeoni":
+                case "pigeonI":
                     try {
                         URI uri = PigeonSBOLv.generatePigeonVisual(sequence);
                         byte[] bytes = IOUtils.toByteArray(uri.toURL().openStream());
@@ -501,7 +459,7 @@ public class SequenceController {
                         return new ByteArrayWrapper(new byte[]{'\0'}, "no_sequence");
                     }
 
-                case "pigeons":
+                case "pigeonS":
                     sequenceString = PigeonSBOLv.generatePigeonScript(sequence);
                     name = entry.getName() + ".txt";
                     break;

@@ -1,20 +1,23 @@
 package org.jbei.ice.lib.utils;
 
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.mail.Email;
-import org.apache.commons.mail.EmailException;
-import org.apache.commons.mail.SimpleEmail;
 import org.jbei.ice.lib.common.logging.Logger;
 import org.jbei.ice.lib.dto.ConfigurationKey;
 
+import javax.mail.*;
+import javax.mail.internet.InternetAddress;
+import javax.mail.internet.MimeMessage;
+import java.util.Properties;
+
 /**
  * Utility methods for email.
- * <p/>
+ * <p>
  * The SMTP server is specified in the configuration file and the admin email is also used for all communications
  *
- * @author Hector Plahar, Zinovii Dmytriv, Timothy Ham
+ * @author Hector Plahar
  */
 public class Emailer {
+
+    private static final String GMAIL_APPLICATION_PASSWORD = "lcpiceice302";
 
     /**
      * Sends an email to the specified recipient with a carbon copy send to the specified ccEmail.
@@ -26,22 +29,33 @@ public class Emailer {
      * @param body          Text of body.
      */
     public static boolean send(String receiverEmail, String ccEmail, String subject, String body) {
-        String hostName = Utils.getConfigValue(ConfigurationKey.SMTP_HOST);
-        if (StringUtils.isEmpty(hostName)) {
-            return false;
-        }
+        Properties props = new Properties();
+        props.put("mail.smtp.host", "smtp.gmail.com");
+        props.put("mail.smtp.socketFactory.port", "465");
+        props.put("mail.smtp.socketFactory.class",
+                "javax.net.ssl.SSLSocketFactory");
+        props.put("mail.smtp.auth", "true");
+        props.put("mail.smtp.port", "465");
 
-        Email email = new SimpleEmail();
-        email.setHostName(hostName);
+        Session session = Session.getDefaultInstance(props,
+                new javax.mail.Authenticator() {
+                    protected PasswordAuthentication getPasswordAuthentication() {
+                        return new PasswordAuthentication(Utils.getConfigValue(ConfigurationKey.ADMIN_EMAIL), GMAIL_APPLICATION_PASSWORD);
+                    }
+                });
+
         try {
-            email.setFrom(Utils.getConfigValue(ConfigurationKey.ADMIN_EMAIL));
-            email.addTo(receiverEmail);
-            email.addCc(ccEmail);
-            email.setSubject(subject);
-            email.setMsg(body);
-            email.send();
+            Message message = new MimeMessage(session);
+            message.setFrom(new InternetAddress(Utils.getConfigValue(ConfigurationKey.ADMIN_EMAIL)));
+            message.setRecipients(Message.RecipientType.TO,
+                    InternetAddress.parse(receiverEmail));
+            message.setRecipients(Message.RecipientType.CC,
+                    InternetAddress.parse(ccEmail));
+            message.setSubject(subject);
+            message.setText(body);
+            Transport.send(message);
             return true;
-        } catch (EmailException e) {
+        } catch (MessagingException e) {
             Logger.error(e);
             return false;
         }

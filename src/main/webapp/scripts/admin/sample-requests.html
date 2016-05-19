@@ -1,9 +1,5 @@
-<div ng-controller="AdminSampleRequestController" style="height: 970px">
-    <div class="pad_top" ng-if="sampleRequests.requests.length">
-        <button type="button" ng-click="searchSampleLocations()" class="ice-button">
-            Search Sample Locations
-        </button>
-
+<div ng-controller="AdminSampleRequestController">
+    <div class="pad_top">
         <span class="uib-dropdown">
             <!--todo filter and update the results based on selection-->
             Show <select ng-model="params.status" ng-change="requestSamples()"
@@ -19,55 +15,52 @@
             <!--</ul>-->
         </span>
 
-        <span class="pull-right" style="border: 1px solid #ccc; margin-right: 12px;">
+        <span class="pull-right" style="border: 1px solid #ccc">
             <i class="fa fa-filter" style="background-color: #d9d9d9; padding: 5px; opacity: 0.7"></i>
-            <input type="text" placeHolder="Filter by name" class="font-90em no_border"
-                   ng-model="params.filter"
+            <input type="text" placeHolder="Filter by name" class="font-90em no_border" ng-model="params.filter"
                    ng-change="requestSamples()"/>
 
-            <!--<i class="fa fa-times-circle opacity_hover" style="padding-right: 2px"-->
-               <!--ng-click="filter=undefined; requestSamples()" ng-show="filter"></i>-->
+            <i class="fa fa-times-circle opacity_hover" style="padding-right: 2px"
+               ng-click="filter=undefined; requestSamples()" ng-show="filter"></i>
         </span>
-    </div>
-
-    <div class="pad_top" ng-if="sampleRequests.requests && !sampleRequests.requests.length">
-        <i class="text-muted">No sample requests available</i>
     </div>
 
     <div class="pad_top">
         <div ng-if='!sampleRequests'><img src="img/loader-mini.gif"> Loading...</div>
 
-        <table cellspacing="0" style="width: 98%" ng-if='sampleRequests && sampleRequests.requests.length > 0'
+        <table cellspacing="0" ng-if='sampleRequests && sampleRequests.requests.length > 0'
                class="table table-responsive table-condensed table-hover table-border-bottom font-95em"
                ng-class="{'opacity_4':loadingPage}">
             <thead>
             <tr>
-                <th>&nbsp;</th>
-                <th style="width: 170px;" class="entry-table-header">Entry</th>
-                <th class="entry-table-header">
-                    <span ng-click="sort('type')">Type</span>
+                <th style="width: 170px;">Entry</th>
+                <th class="cursor_pointer" ng-click="sort('type')">
+                    Type
                     <i ng-show="params.sort=='type'" class="fa"
                        ng-class="{'fa-angle-down':params.asc==false, 'fa-angle-up':params.asc==true}"></i>
                 </th>
-                <th class="entry-table-header">Location</th>
-                <th style="width: 65px" class="entry-table-header">
-                    <span ng-click="sort('status')">Status</span>
+                <th>Location</th>
+                <th style="width: 65px" class="cursor_pointer" ng-click="sort('status')">
+                    Status
                     <i ng-show="params.sort=='status'" class="fa"
                        ng-class="{'fa-angle-down':params.asc==false, 'fa-angle-up':params.asc==true}"></i>
                 </th>
                 <th>&nbsp;</th>
-                <th class="entry-table-header">
-                    <span ng-click="sort('requested')">Requested</span>
+                <th class="cursor_pointer" ng-click="sort('requested')">
+                    Requested
                     <i ng-show="params.sort=='requested'" class="fa"
                        ng-class="{'fa-angle-down':params.asc==false, 'fa-angle-up':params.asc==true}"></i>
                 </th>
             </tr>
             </thead>
             <tbody>
+            <tr data-ng-show="sampleRequests.requests.length === 0">
+                <td colspan="11">No sample requests available</td>
+            </tr>
             <tr data-ng-repeat="request in sampleRequests.requests" class="highlight-row-icons">
-                <td class="table-row-index">
-                    {{((params.currentPage - 1) * params.limit) + $index + 1 | number}}
-                </td>
+                <!--<td style="width: 30px; opacity:0.3; text-shadow:0 1px 0 #fff;">-->
+                <!--<b class="no_wrap">{{indexStart + $index+1 | number}}</b>-->
+                <!--</td>-->
 
                 <td><a ng-href="entry/{{request.partData.id}}">{{request.partData.name}}</a>
                     <br>
@@ -82,7 +75,7 @@
                     </span>
 
                     <div class="small" ng-if="request.growthTemperature">
-                        <span class="opacity_4">growth temp:</span> {{request.growthTemperature}} &deg;C
+                        <span class="opacity_4">Growth Temp:</span> {{request.growthTemperature}} &deg;C
                     </div>
                 </td>
                 <td>
@@ -150,12 +143,13 @@
     <div ng-if='sampleRequests && sampleRequests.requests.length > 0'>
         <div class="col-md-6" style="padding-left: 0">
             <uib-pagination total-items="sampleRequests.count" ng-change="sampleRequestPageChanged()"
-                            ng-model="params.currentPage" max-size="maxSize"
+                        ng-model="params.currentPage"
+                        max-size="maxSize"
                             class="pagination-sm" items-per-page="15" boundary-links="true"></uib-pagination>
         </div>
         <div class="col-md-4" style="margin-top: 20px;"><strong class="small">
             <i ng-show="loadingPage" class="fa fa-spin fa-gear opacity_4"></i> {{pageCounts(params.currentPage,
-            sampleRequests.count, params.limit)}}</strong>
+            sampleRequests.count)}}</strong>
         </div>
     </div>
 </div>

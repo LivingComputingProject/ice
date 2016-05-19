@@ -8,7 +8,7 @@ import org.jbei.ice.lib.common.logging.Logger;
 import org.jbei.ice.lib.dto.ConfigurationKey;
 import org.jbei.ice.lib.dto.DNASequence;
 import org.jbei.ice.lib.dto.bulkupload.EditMode;
-import org.jbei.ice.lib.dto.entry.EntryField;
+import org.jbei.ice.lib.dto.bulkupload.EntryField;
 import org.jbei.ice.lib.dto.entry.EntryType;
 import org.jbei.ice.lib.dto.entry.PartData;
 import org.jbei.ice.lib.dto.entry.Visibility;
@@ -182,24 +182,16 @@ public class BulkEntryCreator {
         if (linkedEntry == null && !StringUtils.isEmpty(linkedPartData.getPartId())) {
             // try partId
             linkedEntry = entryDAO.getByPartNumber(linkedPartData.getPartId());
-            linkedPartData.setId(linkedEntry.getId());
         }
 
-        if (linkedEntry == null) {
-            linkedEntry = InfoToModelFactory.infoToEntry(linkedPartData);
-            if (linkedEntry != null) {
-                linkedEntry.setVisibility(Visibility.DRAFT.getValue());
-                Account account = accountController.getByEmail(userId);
-                linkedEntry.setOwner(account.getFullName());
-                linkedEntry.setOwnerEmail(account.getEmail());
-                linkedEntry = entryDAO.create(linkedEntry);
-                entry.getLinkedEntries().add(linkedEntry);
-                entryDAO.update(linkedEntry);
-            }
-        } else {
-            // linking to existing
-            EntryLinks entryLinks = new EntryLinks(userId, entry.getId());
-            entryLinks.addLink(linkedPartData, LinkType.CHILD);
+        if (linkedEntry == null && (linkedEntry = InfoToModelFactory.infoToEntry(linkedPartData)) != null) {
+            linkedEntry.setVisibility(Visibility.DRAFT.getValue());
+            Account account = accountController.getByEmail(userId);
+            linkedEntry.setOwner(account.getFullName());
+            linkedEntry.setOwnerEmail(account.getEmail());
+            linkedEntry = entryDAO.create(linkedEntry);
+            entry.getLinkedEntries().add(linkedEntry);
+            entryDAO.update(linkedEntry);
         }
 
         // recursively update
@@ -585,7 +577,7 @@ public class BulkEntryCreator {
                 InputStream attachmentStream = files.get(attachmentName);
 
                 // clear
-                List<Attachment> attachments = DAOFactory.getAttachmentDAO().getByEntry(entry);
+                ArrayList<Attachment> attachments = DAOFactory.getAttachmentDAO().getByEntry(entry);
                 if (attachments != null && !attachments.isEmpty()) {
                     for (Attachment attachment : attachments) {
                         String dataDir = Utils.getConfigValue(ConfigurationKey.DATA_DIRECTORY);

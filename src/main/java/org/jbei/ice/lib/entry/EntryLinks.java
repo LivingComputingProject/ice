@@ -58,8 +58,7 @@ public class EntryLinks {
         if (linkedEntry.getId() == this.entry.getId())
             throw new IllegalArgumentException("Cannot link and entry to itself");
 
-        // should have write permissions on the main entry but only read on the entry being linked
-        entryAuthorization.expectRead(userId, linkedEntry);
+        entryAuthorization.expectWrite(userId, linkedEntry);
         entryAuthorization.expectWrite(userId, entry);
 
         // add as parent

@@ -47,9 +47,6 @@ public class Group implements DataModel {
     @Temporal(TemporalType.TIMESTAMP)
     private Date modificationTime;
 
-    @Column(name = "autojoin")
-    private Boolean autoJoin;
-
     @OneToMany(mappedBy = "parent", fetch = FetchType.EAGER, cascade = CascadeType.REMOVE)
     private Set<Group> children = new HashSet<>();
 
@@ -136,25 +133,12 @@ public class Group implements DataModel {
         this.creationTime = creationTime;
     }
 
-    public boolean isAutoJoin() {
-        return autoJoin;
-    }
-
-    public void setAutoJoin(boolean autoJoin) {
-        this.autoJoin = autoJoin;
-    }
-
     public UserGroup toDataTransferObject() {
         UserGroup user = new UserGroup();
         user.setUuid(getUuid());
         user.setId(getId());
         user.setLabel(getLabel());
         user.setDescription(getDescription());
-        if (autoJoin != null)
-            user.setAutoJoin(autoJoin);
-        if (creationTime != null)
-            user.setCreationTime(creationTime.getTime());
-
         Group parent = getParent();
         if (parent != null) {
             user.setParentId(parent.getId());

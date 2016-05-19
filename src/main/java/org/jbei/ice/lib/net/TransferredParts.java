@@ -1,5 +1,6 @@
 package org.jbei.ice.lib.net;
 
+import org.apache.commons.lang3.StringUtils;
 import org.jbei.ice.lib.common.logging.Logger;
 import org.jbei.ice.lib.dto.entry.PartData;
 import org.jbei.ice.lib.dto.entry.Visibility;
@@ -22,30 +23,42 @@ public class TransferredParts {
     }
 
     public PartData receiveTransferredEntry(PartData part) {
-        saveTransferred(part);
+        // check the record id
+        if (StringUtils.isNotEmpty(part.getRecordId())) {
+            Entry entry = dao.getByRecordId(part.getRecordId());
+            if (entry != null) {
+                Logger.warn("Transferred entry's record id \"" + part.getRecordId() + "\" conflicts with existing");
+                return null;
+            }
+        }
+
+        Entry entry = saveTransferred(part);
+        if (entry == null)
+            return null;
+        part.setId(entry.getId());
+        part.setRecordId(entry.getRecordId());
         return part;
     }
 
     private Entry saveTransferred(PartData part) {
-        Entry entry = dao.getByRecordId(part.getRecordId());
-        if (entry != null) {
-            Logger.info("Transferred entry found locally " + part.getRecordId());
-            part.setId(entry.getId());
-        } else {
-            entry = InfoToModelFactory.infoToEntry(part);
-            entry.setVisibility(Visibility.TRANSFERRED.getValue());
-            entry = dao.create(entry);
-            part.setId(entry.getId());
-            part.setRecordId(entry.getRecordId());
+        Entry entry = InfoToModelFactory.infoToEntry(part);
+        if (entry == null) {
+            return null;
         }
 
+        entry.setVisibility(Visibility.TRANSFERRED.getValue());
+        entry = dao.create(entry);
+
         // transfer and linked
-        for (PartData data : part.getLinkedParts()) {
-            Entry linked = saveTransferred(data);
-            data.setId(linked.getId());
-            data.setRecordId(linked.getRecordId());
-            entry.getLinkedEntries().add(linked);
-            dao.update(entry);
+        if (part.getLinkedParts() != null) {
+            for (PartData data : part.getLinkedParts()) {
+                // check if linked already exists before creating
+                Entry linked = dao.getByRecordId(data.getRecordId());
+                if (linked == null)
+                    linked = saveTransferred(data);
+                entry.getLinkedEntries().add(linked);
+                dao.update(entry);
+            }
         }
 
         return entry;

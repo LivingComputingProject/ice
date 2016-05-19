@@ -126,9 +126,7 @@ public class EntryDAOTest {
         data.setBioSafetyLevel(1);
         EntryCreator creator = new EntryCreator();
         creator.createPart(account.getEmail(), data);
-        List<Entry> entries = entryDAO.getByName("pTest");
-        Assert.assertTrue(entries == null || entries.isEmpty());
-        entries = entryDAO.getByName(uniqueName);
-        Assert.assertNotNull(entries);
+        Assert.assertNull(entryDAO.getByUniqueName("pTest"));
+        Assert.assertNotNull(entryDAO.getByUniqueName(uniqueName));
     }
 }

@@ -13,7 +13,6 @@ import org.jbei.ice.storage.model.Account;
 import org.jbei.ice.storage.model.Group;
 import org.jbei.ice.storage.model.Message;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -35,9 +34,9 @@ public class MessageDAO extends HibernateRepository<Message> {
             Session session = currentSession();
             StringBuilder builder = new StringBuilder();
             builder.append("select count(id) from message m where m.is_read=false AND (m.id in ")
-                    .append("(select message_id from message_destination_accounts where account_id = ")
-                    .append(account.getId())
-                    .append(")");
+                   .append("(select message_id from message_destination_accounts where account_id = ")
+                   .append(account.getId())
+                   .append(")");
 
             if (!account.getGroups().isEmpty()) {
                 builder.append(" OR m.id in (select message_id from message_destination_groups where group_id in (");
@@ -61,21 +60,21 @@ public class MessageDAO extends HibernateRepository<Message> {
         }
     }
 
-    public List<Message> retrieveMessages(Account account, List<Group> groups, int start, int count) {
+    public Set<Message> retrieveMessages(Account account, int start, int count) throws DAOException {
         try {
             Session session = currentSession();
             StringBuilder builder = new StringBuilder();
             builder.append("select id from message m where m.id in ")
-                    .append("(select message_id from message_destination_accounts where account_id = ")
-                    .append(account.getId())
-                    .append(")");
+                   .append("(select message_id from message_destination_accounts where account_id = ")
+                   .append(account.getId())
+                   .append(")");
 
-            if (groups != null && !groups.isEmpty()) {
+            if (!account.getGroups().isEmpty()) {
                 builder.append(" OR m.id in (select message_id from message_destination_groups where group_id in (");
 
-                int size = groups.size();
+                int size = account.getGroups().size();
                 int i = 0;
-                for (Group group : groups) {
+                for (Group group : account.getGroups()) {
                     builder.append(group.getId());
                     if (i < size - 1)
                         builder.append(", ");
@@ -96,33 +95,33 @@ public class MessageDAO extends HibernateRepository<Message> {
             }
 
             if (set.isEmpty())
-                return new ArrayList<>();
+                return new HashSet<>();
 
             Criteria criteria = session.createCriteria(Message.class).add(Restrictions.in("id", set));
             criteria.addOrder(Order.desc("dateSent"));
-            return criteria.list();
+            return new HashSet<Message>(criteria.list());
         } catch (HibernateException he) {
             Logger.error(he);
             throw new DAOException(he);
         }
     }
 
-    public int retrieveMessageCount(Account account, List<Group> groups) throws DAOException {
+    public int retrieveMessageCount(Account account) throws DAOException {
         try {
             Session session = currentSession();
             StringBuilder builder = new StringBuilder();
             builder.append("select count(id) from message m where m.id in ")
-                    .append("(select message_id from message_destination_accounts where account_id = ")
-                    .append(account.getId())
-                    .append(")");
+                   .append("(select message_id from message_destination_accounts where account_id = ")
+                   .append(account.getId())
+                   .append(")");
 
-            if (groups != null && !groups.isEmpty()) {
+            if (!account.getGroups().isEmpty()) {
                 builder.append(" OR m.id in (select message_id from message_destination_groups where group_id in")
-                        .append(" (");
+                       .append(" (");
 
-                int size = groups.size();
+                int size = account.getGroups().size();
                 int i = 0;
-                for (Group group : groups) {
+                for (Group group : account.getGroups()) {
                     builder.append(group.getId());
                     if (i < size - 1)
                         builder.append(", ");
@@ -143,6 +142,6 @@ public class MessageDAO extends HibernateRepository<Message> {
 
     @Override
     public Message get(long id) {
-        return super.get(Message.class, id);
+        return null;  //To change body of implemented methods use File | Settings | File Templates.
     }
 }

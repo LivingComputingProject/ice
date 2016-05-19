@@ -1,7 +1,6 @@
 package org.jbei.ice.lib.dto.group;
 
 import org.jbei.ice.lib.account.AccountTransfer;
-import org.jbei.ice.lib.dto.web.RemoteUser;
 import org.jbei.ice.storage.IDataTransferModel;
 
 import java.util.ArrayList;
@@ -21,17 +20,13 @@ public class UserGroup implements IDataTransferModel {
     private String description;
     private ArrayList<UserGroup> children;
     private ArrayList<AccountTransfer> members;
-    private ArrayList<RemoteUser> remoteMembers;
     private long memberCount;
     private GroupType type;
     private String ownerEmail;
-    private boolean autoJoin;
-    private long creationTime;
 
     public UserGroup() {
         children = new ArrayList<>();
         members = new ArrayList<>();
-        remoteMembers = new ArrayList<>();
     }
 
     public String getUuid() {
@@ -82,8 +77,12 @@ public class UserGroup implements IDataTransferModel {
         return members;
     }
 
-    public ArrayList<RemoteUser> getRemoteMembers() {
-        return remoteMembers;
+    public void setMembers(ArrayList<AccountTransfer> members) {
+        this.members = members;
+        if (members == null)
+            setMemberCount(0);
+        else
+            setMemberCount(members.size());
     }
 
     public long getMemberCount() {
@@ -108,21 +107,5 @@ public class UserGroup implements IDataTransferModel {
 
     public void setOwnerEmail(String ownerEmail) {
         this.ownerEmail = ownerEmail;
-    }
-
-    public boolean isAutoJoin() {
-        return autoJoin;
-    }
-
-    public void setAutoJoin(boolean autoJoin) {
-        this.autoJoin = autoJoin;
-    }
-
-    public long getCreationTime() {
-        return creationTime;
-    }
-
-    public void setCreationTime(long creationTime) {
-        this.creationTime = creationTime;
     }
 }

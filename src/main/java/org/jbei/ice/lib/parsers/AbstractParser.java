@@ -1,6 +1,11 @@
 package org.jbei.ice.lib.parsers;
 
+import org.apache.commons.io.IOUtils;
 import org.jbei.ice.lib.dto.DNASequence;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
 
 /**
  * This class provides skeletal implementation of {@link IDNAParser} interface.
@@ -13,8 +18,12 @@ public abstract class AbstractParser implements IDNAParser {
     public abstract DNASequence parse(String textSequence) throws InvalidFormatParserException;
 
     @Override
-    public DNASequence parse(byte[] bytes) throws InvalidFormatParserException {
-        return parse(new String(bytes));
+    public abstract DNASequence parse(byte[] bytes) throws InvalidFormatParserException;
+
+    @Override
+    public DNASequence parse(File file) throws IOException, InvalidFormatParserException {
+        byte[] bytes = IOUtils.toByteArray(new FileInputStream(file));
+        return parse(bytes);
     }
 
     /**

@@ -4,11 +4,9 @@ import org.apache.commons.lang3.StringUtils;
 import org.jbei.ice.lib.common.logging.Logger;
 import org.jbei.ice.lib.dto.entry.AutoCompleteFieldValues;
 import org.jbei.ice.lib.dto.entry.EntryType;
-import org.jbei.ice.lib.dto.search.IndexType;
 import org.jbei.ice.lib.dto.search.SearchQuery;
 import org.jbei.ice.lib.dto.search.SearchResults;
 import org.jbei.ice.lib.search.SearchController;
-import org.jbei.ice.lib.search.WebSearch;
 import org.jbei.ice.lib.shared.ColumnField;
 
 import javax.ws.rs.*;
@@ -59,12 +57,7 @@ public class SearchResource extends RestResource {
                            final SearchQuery query) {
         final String userId = getUserId();
         try {
-            if (searchWeb) {
-                WebSearch webSearch = new WebSearch();
-                return super.respond(webSearch.run(query));
-            }
-
-            final SearchResults results = controller.runSearch(userId, query);
+            final SearchResults results = controller.runSearch(userId, query, searchWeb);
             return super.respond(Response.Status.OK, results);
         } catch (final Exception e) {
             Logger.error(e);
@@ -108,24 +101,6 @@ public class SearchResource extends RestResource {
 
         final List<EntryType> types = Arrays.asList(EntryType.values());
         query.setEntryTypes(types);
-        return super.respond(controller.runSearch(userId, query));
-    }
-
-    @PUT
-    @Path("/indexes/lucene")
-    public Response updateLuceneIndex() {
-        final String userId = requireUserId();
-        SearchController searchController = new SearchController();
-        final boolean success = searchController.rebuildIndexes(userId, IndexType.LUCENE);
-        return super.respond(success);
-    }
-
-    @PUT
-    @Path("/indexes/blast")
-    public Response updateBlastIndex() {
-        final String userId = requireUserId();
-        SearchController searchController = new SearchController();
-        final boolean success = searchController.rebuildIndexes(userId, IndexType.BLAST);
-        return super.respond(success);
+        return super.respond(controller.runSearch(userId, query, searchWeb));
     }
 }

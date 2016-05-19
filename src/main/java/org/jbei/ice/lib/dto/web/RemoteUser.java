@@ -1,6 +1,5 @@
 package org.jbei.ice.lib.dto.web;
 
-import org.jbei.ice.lib.account.AccountTransfer;
 import org.jbei.ice.storage.IDataTransferModel;
 
 /**
@@ -9,7 +8,7 @@ import org.jbei.ice.storage.IDataTransferModel;
 public class RemoteUser implements IDataTransferModel {
 
     private RegistryPartner partner;
-    private AccountTransfer user;
+    private String userId;
 
     public RegistryPartner getPartner() {
         return partner;
@@ -19,11 +18,11 @@ public class RemoteUser implements IDataTransferModel {
         this.partner = partner;
     }
 
-    public AccountTransfer getUser() {
-        return user;
+    public String getUserId() {
+        return userId;
     }
 
-    public void setUser(AccountTransfer user) {
-        this.user = user;
+    public void setUserId(String userId) {
+        this.userId = userId;
     }
 }

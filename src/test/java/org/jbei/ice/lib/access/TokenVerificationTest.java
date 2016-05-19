@@ -60,11 +60,11 @@ public class TokenVerificationTest {
         TokenHash tokenHash = new TokenHash();
         remotePartner.setSalt(tokenHash.generateSalt());
         String token = tokenHash.generateRandomToken();
-        String hash = tokenHash.encrypt(token + remotePartner.getUrl(), remotePartner.getSalt());
+        String hash = tokenHash.encryptPassword(token + remotePartner.getUrl(), remotePartner.getSalt());
         remotePartner.setAuthenticationToken(hash);
         remotePartner.setApiKey("foo");
         remotePartner.setAdded(new Date());
         Assert.assertNotNull(DAOFactory.getRemotePartnerDAO().create(remotePartner));
-        Assert.assertNotNull(verification.verifyPartnerToken(remotePartner.getUrl(), token));
+        Assert.assertTrue(verification.verifyPartnerToken(remotePartner.getUrl(), token));
     }
 }

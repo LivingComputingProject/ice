@@ -155,21 +155,32 @@ public class EntryDAO extends HibernateRepository<Entry> {
     }
 
     /**
-     * Retrieve an {@link Entry} by it's name. Note that name is not a unique field
-     * so this could return more than one entry
+     * Retrieve an {@link Entry} by it's name.The name must be unique to the entry
      *
      * @param name name associated with entry
      * @return Entry.
      * @throws DAOException
      */
-    public List<Entry> getByName(String name) throws DAOException {
+    public Entry getByUniqueName(String name) throws DAOException {
         Session session = currentSession();
 
         try {
             Query query = session.createQuery("from " + Entry.class.getName() + " where name=:name AND visibility=:v");
             query.setParameter("name", name);
             query.setParameter("v", Visibility.OK.getValue());
-            return query.list();
+
+            List queryResult = query.list();
+            if (queryResult == null || queryResult.isEmpty()) {
+                return null;
+            }
+
+            if (queryResult.size() > 1) {
+                String msg = "Duplicate entries found for name " + name;
+                Logger.error(msg);
+                throw new DAOException(msg);
+            }
+
+            return (Entry) queryResult.get(0);
         } catch (HibernateException e) {
             Logger.error("Failed to retrieve entry by name: " + name, e);
             throw new DAOException("Failed to retrieve entry by name: " + name, e);
@@ -222,7 +233,6 @@ public class EntryDAO extends HibernateRepository<Entry> {
         }
     }
 
-    // todo : or entry is in a folder that is public
     public long visibleEntryCount(Account account, Set<Group> groups, String filter) throws DAOException {
         Session session = currentSession();
         Criteria criteria = session.createCriteria(Permission.class);
@@ -306,7 +316,7 @@ public class EntryDAO extends HibernateRepository<Entry> {
     public long sharedEntryCount(Account requester, Set<Group> accountGroups, String filter) throws DAOException {
         try {
             Criteria criteria = getSharedWithUserCriteria(requester, accountGroups);
-            criteria.setProjection(Projections.countDistinct("entry.id"));
+            criteria.setProjection(Projections.rowCount());
             checkAddFilter(criteria, filter, "entry");
             Number rowCount = (Number) criteria.uniqueResult();
             return rowCount.longValue();
@@ -375,7 +385,7 @@ public class EntryDAO extends HibernateRepository<Entry> {
         criteria.add(Restrictions.eq("entry.ownerEmail", owner));
 
         // sort
-        String fieldName = sortField == ColumnField.CREATED ? "entry.id" : "entry." + columnFieldToString(sortField);
+        String fieldName = sortField == ColumnField.CREATED ? "entry.id" : columnFieldToString(sortField);
         criteria.addOrder(asc ? Order.asc(fieldName) : Order.desc(fieldName));
         checkAddFilter(criteria, filter, "entry");
         criteria.setFirstResult(start);
@@ -398,7 +408,6 @@ public class EntryDAO extends HibernateRepository<Entry> {
             Number number = (Number) criteria.uniqueResult();
             return number.longValue();
         } catch (HibernateException he) {
-            Logger.error(he);
             throw new DAOException(he);
         }
     }
@@ -498,9 +507,9 @@ public class EntryDAO extends HibernateRepository<Entry> {
         return (Long) criteria.setProjection(Projections.rowCount()).uniqueResult();
     }
 
-    public long getByVisibilityCount(Visibility visibility) throws DAOException {
+    public long getPendingCount() throws DAOException {
         Criteria criteria = currentSession().createCriteria(Entry.class)
-                .add(Restrictions.eq("visibility", visibility.getValue()));
+                .add(Restrictions.eq("visibility", Visibility.PENDING.getValue()));
         return (Long) criteria.setProjection(Projections.rowCount()).uniqueResult();
     }
 
@@ -706,20 +715,5 @@ public class EntryDAO extends HibernateRepository<Entry> {
                 .add(Restrictions.eq("visibility", Visibility.DELETED.getValue()))
                 .uniqueResult();
         return itemCount.intValue();
-    }
-
-    public int setEntryVisibility(List<Long> list, Visibility ok) {
-        Query query = currentSession().createQuery("update " + Entry.class.getName()
-                + " e set e.visibility=:v where e.id in :ids");
-        query.setParameter("v", ok.getValue());
-        query.setParameterList("ids", list);
-        return query.executeUpdate();
-    }
-
-    public List<String> getRecordTypes(List<Long> list) {
-        return currentSession().createCriteria(Entry.class)
-                .add(Restrictions.in("id", list))
-                .setProjection(Projections.distinct(Projections.property("recordType")))
-                .list();
     }
 }

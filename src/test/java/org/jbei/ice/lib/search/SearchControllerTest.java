@@ -79,25 +79,25 @@ public class SearchControllerTest {
         HibernateUtil.beginTransaction();
         SearchQuery query = new SearchQuery();
         query.setQueryString("testPlasmid");
-        SearchResults results = controller.runSearch(account.getEmail(), query);
+        SearchResults results = controller.runSearch(account.getEmail(), query, false);
         Assert.assertNotNull(results);
         Assert.assertEquals(1, results.getResultCount());
 
         // search for promoters
         query.setQueryString("pTet");
-        results = controller.runSearch(account.getEmail(), query);
+        results = controller.runSearch(account.getEmail(), query, false);
         Assert.assertNotNull(results);
         Assert.assertEquals(1, results.getResultCount());
 
         // search email
         query.setQueryString(account.getEmail());
-        results = controller.runSearch(account.getEmail(), query);
+        results = controller.runSearch(account.getEmail(), query, false);
         Assert.assertNotNull(results);
         Assert.assertEquals(1, results.getResultCount());
 
         // fake search
         query.setQueryString("FAKE_SEARCH");
-        results = controller.runSearch(account.getEmail(), query);
+        results = controller.runSearch(account.getEmail(), query, false);
         Assert.assertNotNull(results);
         Assert.assertEquals(0, results.getResultCount());
     }

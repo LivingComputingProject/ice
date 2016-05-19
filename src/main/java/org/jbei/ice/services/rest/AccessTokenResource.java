@@ -56,11 +56,12 @@ public class AccessTokenResource extends RestResource {
     /**
      * Retrieve account information for user referenced by session id
      *
+     * @param sessionId unique session identifier for logged in user
      * @return account information for session if session is valid, null otherwise
      */
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public Response get() {
+    public Response get(@HeaderParam(AUTHENTICATION_PARAM_NAME) String sessionId) {
         String userId = requireUserId();
         AccountTransfer transfer = accountController.getByEmail(userId).toDataTransferObject();
         transfer.setAdmin(accountController.isAdministrator(userId));
@@ -72,9 +73,10 @@ public class AccessTokenResource extends RestResource {
      */
     @GET
     @Path("/web")
-    public Response getWebPartner(@QueryParam("url") String url) {
+    public Response getWebPartner(@HeaderParam(WOR_PARTNER_TOKEN) String token,
+                                  @QueryParam("url") String url) {
         WebPartners partners = new WebPartners();
-        RegistryPartner partner = partners.get(worPartnerToken, url);
+        RegistryPartner partner = partners.get(token, url);
         return super.respond(partner);
     }
 }

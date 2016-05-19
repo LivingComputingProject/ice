@@ -1,6 +1,5 @@
 package org.jbei.ice.services.rest;
 
-import org.jbei.ice.lib.access.PermissionException;
 import org.jbei.ice.lib.folder.collection.Collection;
 import org.jbei.ice.lib.folder.collection.CollectionEntries;
 import org.jbei.ice.lib.folder.collection.CollectionType;
@@ -21,7 +20,6 @@ import java.util.List;
  * <li><code>Shared</code></li>
  * <li><code>Drafts</code></li>
  * <li><code>Deleted</code></li>
- * <li><code>Transferred</code></li>
  * </ul>
  * <p>
  * These cannot be created or deleted by users
@@ -93,10 +91,6 @@ public class CollectionResource extends RestResource {
         String userId = getUserId();
         log(userId, "retrieving entries for collection " + type);
         CollectionEntries entries = new CollectionEntries(userId, type);
-        try {
-            return super.respond(entries.getEntries(sortField, asc, offset, limit, filter));
-        } catch (PermissionException pe) {
-            return super.respond(Response.Status.FORBIDDEN);
-        }
+        return super.respond(entries.getEntries(sortField, asc, offset, limit, filter));
     }
 }

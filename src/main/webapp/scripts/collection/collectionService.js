@@ -88,14 +88,6 @@ angular.module('ice.collection.service', [])
                 icon: 'fa-trash-o',
                 iconOpen: 'fa-trash red',
                 alwaysVisible: false
-            },
-            {
-                name: 'transferred',
-                description: 'Transferred entries',
-                display: 'Transferred',
-                icon: 'fa-exchange',
-                iconOpen: 'fa-exchange',
-                alwaysVisible: false
             }
         ];
 

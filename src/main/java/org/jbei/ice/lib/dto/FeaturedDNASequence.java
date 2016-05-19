@@ -20,7 +20,6 @@ public class FeaturedDNASequence extends DNASequence {
     private String uri;
     private String dcUri;
     private boolean canEdit;
-    private long length;
 
     public FeaturedDNASequence() {
         super();
@@ -103,13 +102,5 @@ public class FeaturedDNASequence extends DNASequence {
 
     public void setCanEdit(boolean canEdit) {
         this.canEdit = canEdit;
-    }
-
-    public long getLength() {
-        return length;
-    }
-
-    public void setLength(long length) {
-        this.length = length;
     }
 }

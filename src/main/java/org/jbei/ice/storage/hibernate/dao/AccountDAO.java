@@ -3,7 +3,10 @@ package org.jbei.ice.storage.hibernate.dao;
 import org.apache.commons.lang3.StringUtils;
 import org.hibernate.Criteria;
 import org.hibernate.HibernateException;
-import org.hibernate.criterion.*;
+import org.hibernate.criterion.MatchMode;
+import org.hibernate.criterion.Order;
+import org.hibernate.criterion.Projections;
+import org.hibernate.criterion.Restrictions;
 import org.jbei.ice.lib.common.logging.Logger;
 import org.jbei.ice.storage.DAOException;
 import org.jbei.ice.storage.hibernate.HibernateRepository;
@@ -42,16 +45,11 @@ public class AccountDAO extends HibernateRepository<Account> {
     @SuppressWarnings("unchecked")
     public Set<Account> getMatchingAccounts(String token, int limit) {
         try {
-            String[] tokens = token.split("\\s+");
-            Disjunction disjunction = Restrictions.disjunction();
-            for (String tok : tokens) {
-                disjunction.add(Restrictions.ilike("firstName", tok, MatchMode.ANYWHERE))
-                        .add(Restrictions.ilike("lastName", tok, MatchMode.ANYWHERE))
-                        .add(Restrictions.ilike("email", tok, MatchMode.ANYWHERE));
-            }
-
             Criteria criteria = currentSession().createCriteria(Account.class)
-                    .add(disjunction);
+                    .add(Restrictions.disjunction()
+                            .add(Restrictions.ilike("firstName", token, MatchMode.ANYWHERE))
+                            .add(Restrictions.ilike("lastName", token, MatchMode.ANYWHERE))
+                            .add(Restrictions.ilike("email", token, MatchMode.ANYWHERE)));
 
             if (limit > 0)
                 criteria.setMaxResults(limit);

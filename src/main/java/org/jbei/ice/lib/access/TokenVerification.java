@@ -2,7 +2,6 @@ package org.jbei.ice.lib.access;
 
 import org.jbei.ice.lib.account.AccountType;
 import org.jbei.ice.lib.account.TokenHash;
-import org.jbei.ice.lib.dto.web.RegistryPartner;
 import org.jbei.ice.storage.DAOFactory;
 import org.jbei.ice.storage.model.Account;
 import org.jbei.ice.storage.model.ApiKey;
@@ -29,7 +28,7 @@ public class TokenVerification {
         if (key == null)
             throw new PermissionException("Invalid client Id " + clientId);
 
-        String hash_token = tokenHash.encrypt(token, clientId + key.getSecret() + clientId);
+        String hash_token = tokenHash.encryptPassword(token, clientId + key.getSecret() + clientId);
         if (!hash_token.equalsIgnoreCase(key.getHashedToken()))
             throw new PermissionException("Invalid token");
 
@@ -39,19 +38,17 @@ public class TokenVerification {
             userId = account.getEmail();
 
         if (account.getType() == AccountType.ADMIN)
-            return userId;                          // todo : verify that this account actually exists on this instance
+            return userId;
 
         return key.getOwnerEmail();
     }
 
-    public RegistryPartner verifyPartnerToken(String url, String token) {
+    public boolean verifyPartnerToken(String url, String token) {
         RemotePartner remotePartner = DAOFactory.getRemotePartnerDAO().getByUrl(url);
         if (remotePartner == null)
-            return null;
+            return false;
 
-        String hash = this.tokenHash.encrypt(token + url, remotePartner.getSalt());
-        if (!hash.equals(remotePartner.getAuthenticationToken()))
-            return null;
-        return remotePartner.toDataTransferObject();
+        String hash = this.tokenHash.encryptPassword(token + url, remotePartner.getSalt());
+        return hash.equals(remotePartner.getAuthenticationToken());
     }
 }

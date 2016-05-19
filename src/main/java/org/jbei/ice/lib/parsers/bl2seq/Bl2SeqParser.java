@@ -7,7 +7,7 @@ import java.util.regex.Pattern;
 
 /**
  * Parse output of bl2seq sequence comparison program.
- *
+ * 
  * @author Zinovii Dmytriv
  */
 public class Bl2SeqParser {
@@ -57,12 +57,14 @@ public class Bl2SeqParser {
                             results.add(bl2seqResult);
                         }
 
+                        score = 0;
+                        orientation = 0;
                         queryDataSequence = null;
                         subjectDataSequence = null;
                     }
 
                     // get score
-                    score = new Integer((scoreMatcher.group(1)));
+                    score = new Integer((scoreMatcher.group(1))).intValue();
 
                     stringTokenizer.nextToken();
                     line = stringTokenizer.nextToken();   // strand is second line after score
@@ -87,6 +89,7 @@ public class Bl2SeqParser {
 
                     // get subject sequence
                     line = stringTokenizer.nextToken();
+                    line = stringTokenizer.nextToken();
                     if (subjectDataSequence == null) {
                         subjectDataSequence = parseSequenceLine(line);
                     } else {
@@ -105,7 +108,7 @@ public class Bl2SeqParser {
                             && score >= MIN_SCORE) {
                         //@formatter:off
                         final Bl2SeqResult bl2seqResult = new Bl2SeqResult(
-                                score,
+                                score, 
                                 new Integer(queryDataSequence.get(0)),
                                 new Integer(queryDataSequence.get(1)),
                                 queryDataSequence.get(2),

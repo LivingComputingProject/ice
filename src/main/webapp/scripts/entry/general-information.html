@@ -377,11 +377,8 @@
                                target="_self"><i>FASTA</i></a>
                         </li>
                         <li class="cursor_pointer font-80em">
-                            <a ng-href="rest/file/{{entry.id}}/sequence/sbol1?sid={{sessionId}}"
-                               target="_self"><i>SBOL 1.1</i></a>
-                        <li class="cursor_pointer font-80em">
-                            <a ng-href="rest/file/{{entry.id}}/sequence/sbol2?sid={{sessionId}}"
-                               target="_self"><i>SBOL 2.0</i></a>
+                            <a ng-href="rest/file/{{entry.id}}/sequence/sbol?sid={{sessionId}}"
+                               target="_self"><i>SBOL</i></a>
                         </li>
                         <li class="cursor_pointer font-80em">
                             <a ng-href="rest/file/{{entry.id}}/sequence/pigeonI?sid={{sessionId}}"
@@ -399,12 +396,6 @@
                 <small class="opacity_hover" ng-click="sbolShowHide()">
                     <span ng-show="showSBOL">Hide</span>
                     <span ng-hide="showSBOL">Show</span> Pigeon Image
-                </small>
-
-                <span style="font-weight: normal; color: #e3e3e3">&nbsp;&nbsp;|&nbsp;&nbsp;</span>
-
-                <small class="opacity_hover" ng-click="showAutoAnnotationPopup()">
-                    Auto Annotate
                 </small>
             </div>
         </div>
@@ -461,8 +452,6 @@
         <div class="entry-details-subheader">
             <strong style="color: #233559;">NOTES</strong>
         </div>
-        <span class="dont-break-out">
-            {{entry.longDescription}}
-        </span>
+        {{entry.longDescription}}
     </div>
 </div>

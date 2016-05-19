@@ -45,12 +45,14 @@ public class SequenceUtils {
      * @throws UtilityException
      */
     public static String reverseComplement(String sequence) throws UtilityException {
-        SymbolList symL;
+        SymbolList symL = null;
 
         try {
             symL = DNATools.createDNA(sequence);
             symL = DNATools.reverseComplement(symL);
-        } catch (IllegalSymbolException | IllegalAlphabetException e) {
+        } catch (IllegalSymbolException e) {
+            throw new UtilityException(e);
+        } catch (IllegalAlphabetException e) {
             throw new UtilityException(e);
         }
 
@@ -70,7 +72,9 @@ public class SequenceUtils {
         try {
             symL = DNATools.createDNA(dnaSequence);
             symL = DNATools.toProtein(symL);
-        } catch (IllegalSymbolException | IllegalAlphabetException e) {
+        } catch (IllegalSymbolException e) {
+            throw new UtilityException(e);
+        } catch (IllegalAlphabetException e) {
             throw new UtilityException(e);
         }
 

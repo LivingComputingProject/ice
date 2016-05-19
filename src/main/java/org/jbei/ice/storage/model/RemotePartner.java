@@ -168,10 +168,10 @@ public class RemotePartner implements DataModel {
         if (this.lastContact != null)
             registryPartner.setLastContactTime(this.lastContact.getTime());
         registryPartner.setUrl(this.url);
-        registryPartner.setStatus(this.partnerStatus);
+        registryPartner.setStatus(getPartnerStatus() == null
+                                          ? RemotePartnerStatus.APPROVED.name() : getPartnerStatus().name());
         registryPartner.setSent(getSent());
-        registryPartner.setFetched(fetched);
-        registryPartner.setApiKey(apiKey);
+        registryPartner.setFetched(getFetched());
         return registryPartner;
     }
 }

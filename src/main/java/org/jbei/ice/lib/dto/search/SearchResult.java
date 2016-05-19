@@ -1,9 +1,9 @@
 package org.jbei.ice.lib.dto.search;
 
+import java.util.LinkedList;
+
 import org.jbei.ice.lib.dto.entry.HasEntryData;
 import org.jbei.ice.lib.dto.web.RegistryPartner;
-
-import java.util.LinkedList;
 
 /**
  * DTO for searches
@@ -17,7 +17,6 @@ public class SearchResult extends HasEntryData {
     private String eValue;
     private String alignment;
     private int queryLength;
-    private int nident; // number of identical matches
     private float score;
     private float maxScore;
     private LinkedList<String> matchDetails;
@@ -78,13 +77,5 @@ public class SearchResult extends HasEntryData {
 
     public void setPartner(RegistryPartner partner) {
         this.partner = partner;
-    }
-
-    public int getNident() {
-        return nident;
-    }
-
-    public void setNident(int nident) {
-        this.nident = nident;
     }
 }

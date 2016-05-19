@@ -24,6 +24,13 @@ iceDirectives.directive('focus', function ($timeout, $rootScope) {
     }
 });
 
+iceDirectives.directive("addSequence", function () {
+    return {
+        restrict: "AE",
+        templateUrl: "scripts/entry/sequence/add-sequence.html"
+    }
+});
+
 iceDirectives.directive("folderActions", function () {
     return {
         restrict: "AE",
@@ -207,22 +214,15 @@ iceDirectives.directive("ice.menu.tags", function () {
     }
 });
 
-iceDirectives.directive("iceVectorViewer", function ($cookieStore, FolderSelection, $location) {
+iceDirectives.directive("iceVectorViewer", function ($cookieStore) {
     function link(scope, element, attrs) {
         var sid = $cookieStore.get("sessionId");
         var entryId;
 
         function generateObject() {
-            var search = $location.search();
-            var s = "<object id='VectorViewer' width='100%' height='100%' data='swf/vv/VectorViewer.swf?entryId="
-                + entryId + "&amp;sessionId=" + sid;
-
-            if (search && search.folderId) {
-                s += "&folderId=" + search.folderId + "&amp;remote=true";
-            }
-            s += "'></object>";
-
-            element.html(s);
+            element.html('<object id="VectorViewer" width="100%" height="100%" data="swf/vv/VectorViewer.swf?entryId='
+                + entryId + '&amp;sessionId=' + sid + '"> \
+                              </object>');
         }
 
         scope.$watch('entry', function (value) {

@@ -5,11 +5,9 @@ import org.jbei.auth.hmac.HmacSignature;
 import org.jbei.ice.lib.access.TokenVerification;
 import org.jbei.ice.lib.account.UserSessions;
 import org.jbei.ice.lib.common.logging.Logger;
-import org.jbei.ice.lib.dto.web.RegistryPartner;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.HeaderParam;
-import javax.ws.rs.QueryParam;
 import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.Response;
@@ -29,25 +27,22 @@ public class RestResource {
     protected final String API_KEY_CLIENT_ID = "X-ICE-API-Token-Client"; // client id
 
     @HeaderParam(value = WOR_PARTNER_TOKEN)
-    protected String worPartnerToken;
+    private String worPartnerToken;
 
     @HeaderParam(value = API_KEY_CLIENT_ID)
-    protected String apiClientId;
+    private String apiClientId;
 
     @HeaderParam(value = API_KEY_USER)
-    protected String apiUser;
+    private String apiUser;
 
     @HeaderParam(value = API_KEY_TOKEN)
-    protected String apiToken;
+    private String apiToken;
 
     @HeaderParam(value = AUTHENTICATION_PARAM_NAME)
-    protected String sessionId;
+    private String sessionId;
 
     @HeaderParam(value = "Authorization")
-    protected String hmacHeader;
-
-    @QueryParam(value = "sid")
-    protected String querySessionId;
+    private String hmacHeader;
 
     @Context
     protected HttpServletRequest request;
@@ -75,30 +70,10 @@ public class RestResource {
         return userId;
     }
 
-    // returns the  name and port for this server
-    protected String getThisServer(boolean includeContext) {
-        String url = request.getServerName();
-        int port = request.getServerPort();
-        // exclude invalid and default http(s) ports
-        if (port > 0 && port != 443 && port != 80) {
-            url += (":" + Integer.toString(port));
-        }
-
-        if (includeContext) {
-            String context = request.getContextPath();
-            if (!StringUtils.isEmpty(context))
-                url += "/" + context;
-        }
-        return url;
-    }
-
     /**
      * Extract the User ID from a query parameter value or header values in the resource request.
      */
-    protected String getUserId(String sessionId) {
-        if (StringUtils.isEmpty(sessionId) && !StringUtils.isEmpty(querySessionId))
-            sessionId = querySessionId;
-
+    protected String getUserId(final String sessionId) {
         String userId = UserSessions.getUserIdBySession(sessionId);
         if (!StringUtils.isEmpty(userId))
             return userId;
@@ -130,17 +105,11 @@ public class RestResource {
         return userId;
     }
 
-    protected RegistryPartner requireWebPartner() {
-        RegistryPartner partner = getWebPartner();
-        if (partner == null)
-            throw new WebApplicationException(Response.Status.FORBIDDEN);
-        return partner;
-    }
-
-    protected RegistryPartner getWebPartner() {
+    protected void verifyWebPartnerUrl() {
         String clientId = !StringUtils.isEmpty(apiClientId) ? apiClientId : request.getRemoteHost();
         TokenVerification tokenVerification = new TokenVerification();
-        return tokenVerification.verifyPartnerToken(clientId, worPartnerToken);
+        if (!tokenVerification.verifyPartnerToken(clientId, worPartnerToken))
+            throw new WebApplicationException(Response.Status.FORBIDDEN);
     }
 
     /**

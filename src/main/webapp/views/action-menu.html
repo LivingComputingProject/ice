@@ -43,35 +43,20 @@
     </div>
 
     <!--download-->
-    <div class="btn-group" style="margin-left: 20px" uib-dropdown>
-        <button class="btn btn-default action-menu" ng-disabled="addToDisabled" uib-dropdown-toggle>
-            <i class="fa fa-cloud-download font-12em"></i>
-            <br>
-            <small class="text-uppercase font-55em">Export <span class="caret"></span></small>
-        </button>
+    <button class="btn btn-default action-menu" ng-disabled="addToDisabled" ng-click="csvExport()"
+            style="margin-left: 20px">
+        <i class="fa fa-cloud-download font-12em"></i>
+        <br>
+        <small class="text-uppercase font-55em">Export</small>
+    </button>
 
-        <ul class="uib-dropdown-menu">
-            <li><a href="#" class="font-90em" ng-click="csvExport(false)">CSV Only</a></li>
-            <li><a href="#" class="font-90em" ng-click="csvExport(true)">CSV & sequences</a></li>
-            <!--<li class="divider"></li>-->
-            <!--<li><a href="#" class="font-90em">Customize</a></li>-->
-        </ul>
-    </div>
 
     <!--transfer-->
     <div class="btn-group" style="margin-left: 20px" ng-if="user.isAdmin">
-        <button class="btn btn-default action-menu" ng-disabled="!transferAvailable()"
-                ng-click="openTransferEntriesModal()">
+        <button class="btn btn-default action-menu" ng-disabled="addToDisabled" ng-click="openTransferEntriesModal()">
             <i class="fa fa-share font-12em"></i>
             <br>
             <small class="text-uppercase font-55em">Transfer</small>
-        </button>
-
-        <!--accept transferred entries-->
-        <button class="btn btn-default action-menu" ng-disabled="!canAccept()" ng-click="acceptTransferredEntries()">
-            <i class="fa fa-save font-12em"></i>
-            <br>
-            <small class="text-uppercase font-55em">Accept</small>
         </button>
     </div>
 

@@ -1,7 +1,6 @@
 package org.jbei.ice.lib.config;
 
 import org.apache.commons.lang3.StringUtils;
-import org.jbei.ice.lib.access.PermissionException;
 import org.jbei.ice.lib.account.AccountController;
 import org.jbei.ice.lib.common.logging.Logger;
 import org.jbei.ice.lib.dto.ConfigurationKey;
@@ -18,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.List;
 
 /**
  * @author Hector Plahar
@@ -95,11 +95,11 @@ public class ConfigurationController {
     public Setting updateSetting(String userId, Setting setting, String url) {
         AccountController accountController = new AccountController();
         if (!accountController.isAdministrator(userId))
-            throw new PermissionException("Cannot update system setting without admin privileges");
+            return null;
 
         ConfigurationKey key = ConfigurationKey.valueOf(setting.getKey());
         if (key == null)
-            throw new IllegalArgumentException("Invalid system key " + setting.getKey());
+            return null;
 
         Configuration configuration = setPropertyValue(key, setting.getValue());
 
@@ -107,7 +107,7 @@ public class ConfigurationController {
         if (key == ConfigurationKey.JOIN_WEB_OF_REGISTRIES) {
             WoRController woRController = new WoRController();
             boolean enable = "yes".equalsIgnoreCase(setting.getValue()) || "true".equalsIgnoreCase(setting.getValue());
-            woRController.setEnable(userId, enable, url);
+            woRController.setEnable(enable, url);
         }
 
         return configuration.toDataTransferObject();
@@ -127,18 +127,19 @@ public class ConfigurationController {
         }
     }
 
-    public SiteSettings getSiteSettings() {
-        SiteSettings settings = new SiteSettings();
+    public List<Setting> getSiteSettings() {
         String dataDirectory = Utils.getConfigValue(ConfigurationKey.DATA_DIRECTORY);
-        final String LOGO_NAME = "logo.png";
-        final String LOGIN_MESSAGE_FILENAME = "institution.html";
-        final String FOOTER_FILENAME = "footer.html";
+        Path path = Paths.get(dataDirectory, UI_CONFIG_DIR);
+        ArrayList<Setting> settings = new ArrayList<>();
+        settings.add(new Setting("version", "4.6.2"));
+        Setting setting;
 
-        settings.setHasLogo(Files.exists(Paths.get(dataDirectory, UI_CONFIG_DIR, LOGO_NAME)));
-        settings.setHasLoginMessage(Files.exists(Paths.get(dataDirectory, UI_CONFIG_DIR, LOGIN_MESSAGE_FILENAME)));
-        settings.setHasFooter(Files.exists(Paths.get(dataDirectory, UI_CONFIG_DIR, FOOTER_FILENAME)));
-        settings.setAssetName(UI_CONFIG_DIR);
-
+        // todo: also check if all the required files are in there
+        if (Files.exists(path))
+            setting = new Setting("UI_ASSET", UI_CONFIG_DIR);
+        else
+            setting = new Setting("UI_ASSET", "");
+        settings.add(setting);
         return settings;
     }
 
