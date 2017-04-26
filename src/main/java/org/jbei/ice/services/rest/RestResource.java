@@ -2,12 +2,15 @@ package org.jbei.ice.services.rest;
 
 import org.apache.commons.lang3.StringUtils;
 import org.jbei.auth.hmac.HmacSignature;
+import org.jbei.ice.lib.access.PermissionException;
 import org.jbei.ice.lib.access.TokenVerification;
 import org.jbei.ice.lib.account.UserSessions;
 import org.jbei.ice.lib.common.logging.Logger;
+import org.jbei.ice.lib.dto.web.RegistryPartner;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.HeaderParam;
+import javax.ws.rs.QueryParam;
 import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.Response;
@@ -20,29 +23,40 @@ import javax.ws.rs.core.Response;
  */
 public class RestResource {
 
-    protected final String AUTHENTICATION_PARAM_NAME = "X-ICE-Authentication-SessionId";
-    protected final String WOR_PARTNER_TOKEN = "X-ICE-WOR-Token";
-    protected final String API_KEY_TOKEN = "X-ICE-API-Token";        // token for validation
-    protected final String API_KEY_USER = "X-ICE-API-Token-User";    // optional user
-    protected final String API_KEY_CLIENT_ID = "X-ICE-API-Token-Client"; // client id
+    protected final String AUTHENTICATION_PARAM_NAME = Headers.AUTHENTICATION_PARAM_NAME;
+    protected final String WOR_PARTNER_TOKEN = Headers.WOR_PARTNER_TOKEN;
+    protected final String API_KEY_TOKEN = Headers.API_KEY_TOKEN;               // token for validation
+    protected final String API_KEY_USER = Headers.API_KEY_USER;           // optional user. system checks and uses assigned token user if not specified
+    protected final String API_KEY_CLIENT_ID = Headers.API_KEY_CLIENT_ID;    // client id
+    protected final String REMOTE_USER_TOKEN = Headers.REMOTE_USER_TOKEN;   // token for remote user
+    protected final String REMOTE_USER_ID = Headers.REMOTE_USER_ID;         // id for remote user
 
     @HeaderParam(value = WOR_PARTNER_TOKEN)
-    private String worPartnerToken;
+    protected String worPartnerToken;
 
     @HeaderParam(value = API_KEY_CLIENT_ID)
-    private String apiClientId;
+    protected String apiClientId;
 
     @HeaderParam(value = API_KEY_USER)
-    private String apiUser;
+    protected String apiUser;
 
     @HeaderParam(value = API_KEY_TOKEN)
-    private String apiToken;
+    protected String apiToken;
 
     @HeaderParam(value = AUTHENTICATION_PARAM_NAME)
-    private String sessionId;
+    protected String sessionId;
+
+    @HeaderParam(value = REMOTE_USER_TOKEN)
+    protected String remoteUserToken;
+
+    @HeaderParam(value = REMOTE_USER_ID)
+    protected String remoteUserId;
 
     @HeaderParam(value = "Authorization")
-    private String hmacHeader;
+    protected String hmacHeader;
+
+    @QueryParam(value = "sid")
+    protected String querySessionId;
 
     @Context
     protected HttpServletRequest request;
@@ -70,10 +84,30 @@ public class RestResource {
         return userId;
     }
 
+    // returns the  name and port for this server
+    protected String getThisServer(boolean includeContext) {
+        String url = request.getServerName();
+        int port = request.getServerPort();
+        // exclude invalid and default http(s) ports
+        if (port > 0 && port != 443 && port != 80) {
+            url += (":" + Integer.toString(port));
+        }
+
+        if (includeContext) {
+            String context = request.getContextPath();
+            if (!StringUtils.isEmpty(context))
+                url += "/" + context;
+        }
+        return url;
+    }
+
     /**
      * Extract the User ID from a query parameter value or header values in the resource request.
      */
-    protected String getUserId(final String sessionId) {
+    protected String getUserId(String sessionId) {
+        if (StringUtils.isEmpty(sessionId) && !StringUtils.isEmpty(querySessionId))
+            sessionId = querySessionId;
+
         String userId = UserSessions.getUserIdBySession(sessionId);
         if (!StringUtils.isEmpty(userId))
             return userId;
@@ -82,8 +116,12 @@ public class RestResource {
         if (!StringUtils.isEmpty(apiToken)) {
             String clientId = !StringUtils.isEmpty(apiClientId) ? apiClientId : request.getRemoteHost();
 
-            TokenVerification tokenVerification = new TokenVerification();
-            userId = tokenVerification.verifyAPIKey(apiToken, clientId, apiUser);
+            try {
+                TokenVerification tokenVerification = new TokenVerification();
+                userId = tokenVerification.verifyAPIKey(apiToken, clientId, apiUser);
+            } catch (PermissionException pe) {
+                throw new WebApplicationException(Response.Status.UNAUTHORIZED);
+            }
 
             // being a bit generous in terms of allowing other auth methods to be attempted even though apiToken is set
             if (userId != null)
@@ -105,11 +143,17 @@ public class RestResource {
         return userId;
     }
 
-    protected void verifyWebPartnerUrl() {
+    protected RegistryPartner requireWebPartner() {
+        RegistryPartner partner = getWebPartner();
+        if (partner == null)
+            throw new WebApplicationException(Response.Status.FORBIDDEN);
+        return partner;
+    }
+
+    protected RegistryPartner getWebPartner() {
         String clientId = !StringUtils.isEmpty(apiClientId) ? apiClientId : request.getRemoteHost();
         TokenVerification tokenVerification = new TokenVerification();
-        if (!tokenVerification.verifyPartnerToken(clientId, worPartnerToken))
-            throw new WebApplicationException(Response.Status.FORBIDDEN);
+        return tokenVerification.verifyPartnerToken(clientId, worPartnerToken);
     }
 
     /**
@@ -174,5 +218,16 @@ public class RestResource {
     protected void log(final String userId, final String message) {
         final String who = (userId == null) ? "Unknown" : userId;
         Logger.info(who + ": " + message);
+    }
+
+    protected Response addHeaders(Response.ResponseBuilder response, String fileName) {
+        response.header("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
+        int dotIndex = fileName.lastIndexOf('.') + 1;
+        if (dotIndex == 0)
+            return response.build();
+
+        String mimeType = ExtensionToMimeType.getMimeType(fileName.substring(dotIndex));
+        response.header("Content-Type", mimeType + "; name=\"" + fileName + "\"");
+        return response.build();
     }
 }

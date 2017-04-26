@@ -15,7 +15,7 @@ import java.util.Set;
 
 /**
  * Store Sample information.
- * <p>
+ * <p/>
  * Each sample is a uniquely identified (via UUIDv4) object representing a physical sample. Storage
  * locations are handled by {@link Storage} objects.
  *
@@ -153,6 +153,8 @@ public class Sample implements DataModel {
         if (entry != null)
             sample.setPartId(entry.getId());
         sample.setCreationTime(creationTime.getTime());
+        if (this.getStorage() != null)
+            sample.setLocation(this.getStorage().toDataTransferObject());
         return sample;
     }
 }

@@ -3,14 +3,15 @@ package org.jbei.ice.lib.folder;
 import org.apache.commons.lang3.StringUtils;
 import org.jbei.ice.lib.access.PermissionsController;
 import org.jbei.ice.lib.account.AccountController;
+import org.jbei.ice.lib.account.AccountTransfer;
 import org.jbei.ice.lib.bulkupload.BulkUploadController;
 import org.jbei.ice.lib.bulkupload.BulkUploadInfo;
 import org.jbei.ice.lib.common.logging.Logger;
 import org.jbei.ice.lib.dto.entry.PartData;
+import org.jbei.ice.lib.dto.entry.Visibility;
 import org.jbei.ice.lib.dto.folder.FolderAuthorization;
 import org.jbei.ice.lib.dto.folder.FolderDetails;
 import org.jbei.ice.lib.dto.folder.FolderType;
-import org.jbei.ice.lib.dto.permission.AccessPermission;
 import org.jbei.ice.lib.group.GroupController;
 import org.jbei.ice.lib.shared.ColumnField;
 import org.jbei.ice.storage.DAOFactory;
@@ -19,7 +20,10 @@ import org.jbei.ice.storage.hibernate.dao.AccountDAO;
 import org.jbei.ice.storage.hibernate.dao.EntryDAO;
 import org.jbei.ice.storage.hibernate.dao.FolderDAO;
 import org.jbei.ice.storage.hibernate.dao.PermissionDAO;
-import org.jbei.ice.storage.model.*;
+import org.jbei.ice.storage.model.Account;
+import org.jbei.ice.storage.model.Entry;
+import org.jbei.ice.storage.model.Folder;
+import org.jbei.ice.storage.model.Group;
 
 import java.util.*;
 
@@ -63,7 +67,7 @@ public class FolderController {
         ArrayList<FolderDetails> list = new ArrayList<>();
         for (Folder folder : folders) {
             FolderDetails details = folder.toDataTransferObject();
-            long folderSize = dao.getFolderSize(folder.getId(), null);
+            long folderSize = dao.getFolderSize(folder.getId(), null, true);
             details.setCount(folderSize);
             details.setType(FolderType.PUBLIC);
             details.setCanEdit(isAdmin);
@@ -81,11 +85,11 @@ public class FolderController {
      */
     public ArrayList<FolderDetails> getPublicFolders() {
         Group publicGroup = groupController.createOrRetrievePublicGroup();
-        Set<Folder> folders = permissionDAO.getFolders(publicGroup);
+        List<Folder> folders = permissionDAO.getFolders(publicGroup);
         ArrayList<FolderDetails> list = new ArrayList<>();
         for (Folder folder : folders) {
             FolderDetails details = folder.toDataTransferObject();
-            long folderSize = dao.getFolderSize(folder.getId(), null);
+            long folderSize = dao.getFolderSize(folder.getId(), null, true);
             details.setCount(folderSize);
             list.add(details);
         }
@@ -109,7 +113,7 @@ public class FolderController {
         groups.add(publicGroup);
 
         EntryDAO entryDAO = DAOFactory.getEntryDAO();
-        Set<Entry> results = entryDAO.retrieveVisibleEntries(null, groups, sort, asc, offset, limit, null);
+        List<Entry> results = entryDAO.retrieveVisibleEntries(null, groups, sort, asc, offset, limit, null);
         long visibleCount = entryDAO.visibleEntryCount(null, groups, null);
 
         FolderDetails details = new FolderDetails();
@@ -170,6 +174,11 @@ public class FolderController {
 
         authorization.expectWrite(userId, folder);
 
+        // check if status is being updated first
+        if (folder.getType() == FolderType.TRANSFERRED && details.getType() == FolderType.PRIVATE) {
+            return acceptTransferredFolder(userId, folder);
+        }
+
         if (details.getType() == FolderType.PUBLIC && folder.getType() != FolderType.PUBLIC)
             return promoteFolder(userId, folder);
 
@@ -186,6 +195,26 @@ public class FolderController {
         }
 
         return dao.update(folder).toDataTransferObject();
+    }
+
+    private FolderDetails acceptTransferredFolder(String userId, Folder folder) {
+        authorization.expectAdmin(userId);
+
+        if (folder.getType() != FolderType.TRANSFERRED)
+            throw new IllegalArgumentException("Folder " + folder.getId() + " is not a transferred folder");
+
+        // change the status and those of the entries contained to "ok"
+        List<Long> entryIds = dao.getFolderContentIds(folder.getId(), null, false);
+        if (entryIds == null || entryIds.isEmpty())
+            return folder.toDataTransferObject();
+
+        if (DAOFactory.getEntryDAO().setEntryVisibility(entryIds, Visibility.OK) == 0)
+            return null;
+
+        folder.setType(FolderType.PRIVATE);
+        folder.setOwnerEmail(userId);  // todo : review. making the owner the current admin accepting
+        folder = dao.update(folder);
+        return folder.toDataTransferObject();
     }
 
     /**
@@ -211,6 +240,8 @@ public class FolderController {
                 return details;
 
             case PRIVATE:
+            case TRANSFERRED:
+            case SHARED:
                 Folder folder = dao.get(folderId);
                 if (folder == null)
                     return null;
@@ -222,7 +253,7 @@ public class FolderController {
                 }
 
                 details = folder.toDataTransferObject();
-                long folderSize = dao.getFolderSize(folderId, null);
+                long folderSize = dao.getFolderSize(folderId, null, true);
                 details.setCount(folderSize);
 
                 dao.delete(folder);
@@ -239,7 +270,12 @@ public class FolderController {
         if (folderDetails.getName() == null)
             return null;
         Folder folder = new Folder(folderDetails.getName());
-        folder.setOwnerEmail(userId);
+        AccountTransfer owner = folderDetails.getOwner();
+        if (owner != null && !StringUtils.isEmpty(owner.getEmail()) && accountController.isAdministrator(userId))
+            folder.setOwnerEmail(owner.getEmail());
+        else
+            folder.setOwnerEmail(userId);
+
         folder.setType(FolderType.PRIVATE);
         folder.setCreationTime(new Date());
         folder = dao.create(folder);
@@ -248,6 +284,18 @@ public class FolderController {
         return details;
     }
 
+    public FolderDetails createTransferredFolder(FolderDetails folderDetails) {
+        Folder folder = new Folder(folderDetails.getName());
+        AccountTransfer owner = folderDetails.getOwner();
+        if (owner != null)
+            folder.setOwnerEmail(owner.getEmail());
+        else
+            folder.setOwnerEmail("transferred");
+        folder.setType(FolderType.TRANSFERRED);
+        folder.setCreationTime(new Date(folderDetails.getCreationTime()));
+        folder = dao.create(folder);
+        return folder.toDataTransferObject();
+    }
 
     public ArrayList<FolderDetails> getUserFolders(String userId) {
         Account account = getAccount(userId);
@@ -258,34 +306,15 @@ public class FolderController {
                 continue;
 
             FolderDetails details = new FolderDetails(folder.getId(), folder.getName());
-            long folderSize = dao.getFolderSize(folder.getId(), null);
+            long folderSize = dao.getFolderSize(folder.getId(), null, true);
             details.setCount(folderSize);
             details.setType(folder.getType());
+            if (folder.getCreationTime() != null)
+                details.setCreationTime(folder.getCreationTime().getTime());
             details.setCanEdit(true);
             folderDetails.add(details);
         }
         return folderDetails;
-    }
-
-    public ArrayList<AccessPermission> getPermissions(String userId, long folderId) {
-        Folder folder = dao.get(folderId);
-        if (folder == null)
-            return null;
-
-        authorization.expectWrite(userId, folder);
-
-        ArrayList<AccessPermission> accessPermissions = new ArrayList<>();
-        Set<Permission> permissions = permissionDAO.getFolderPermissions(folder);
-
-        for (Permission permission : permissions) {
-            if (permission.getGroup() != null && permission.getGroup().getUuid().equals(
-                    GroupController.PUBLIC_GROUP_UUID))
-                continue;
-
-            accessPermissions.add(permission.toDataTransferObject());
-        }
-
-        return accessPermissions;
     }
 
     /**
@@ -300,91 +329,40 @@ public class FolderController {
 
         Set<Group> groups = account.getGroups();
         groups.remove(groupController.createOrRetrievePublicGroup());
-        Set<Folder> sharedFolders = DAOFactory.getPermissionDAO().retrieveFolderPermissions(account, groups);
+        List<Folder> sharedFolders = DAOFactory.getPermissionDAO().retrieveFolderPermissions(account, groups);
         if (sharedFolders == null)
             return null;
 
         for (Folder folder : sharedFolders) {
             FolderDetails details = folder.toDataTransferObject();
-            details.setType(FolderType.SHARED);
-            long folderSize = dao.getFolderSize(folder.getId(), null);
+            details.setType(folder.getType());
+            long folderSize = dao.getFolderSize(folder.getId(), null, true);
             details.setCount(folderSize);
+            if (folder.getCreationTime() != null)
+                details.setCreationTime(folder.getCreationTime().getTime());
             folderDetails.add(details);
         }
 
         return folderDetails;
     }
 
-    public boolean enablePublicReadAccess(String userId, long folderId) {
-        AccessPermission permission = new AccessPermission();
-        permission.setType(AccessPermission.Type.READ_FOLDER);
-        permission.setTypeId(folderId);
-        permission.setArticle(AccessPermission.Article.GROUP);
-        permission.setArticleId(groupController.createOrRetrievePublicGroup().getId());
-        return createFolderPermission(userId, folderId, permission) != null;
-    }
+    public ArrayList<FolderDetails> getTransferredFolders(String userId) {
+        if (!accountController.isAdministrator(userId))
+            return new ArrayList<>();
 
-    public AccessPermission createFolderPermission(String userId, long folderId, AccessPermission accessPermission) {
-        if (accessPermission == null)
-            return null;
+        List<Folder> transferredFolders = dao.getFoldersByType(FolderType.TRANSFERRED);
+        ArrayList<FolderDetails> folderDetails = new ArrayList<>();
 
-        Folder folder = dao.get(folderId);
-        if (folder == null)
-            return null;
-
-        authorization.expectWrite(userId, folder);
-
-        Permission permission = new Permission();
-        permission.setFolder(folder);
-        if (accessPermission.getArticle() == AccessPermission.Article.GROUP) {
-            Group group = DAOFactory.getGroupDAO().get(accessPermission.getArticleId());
-            if (group == null) {
-                Logger.error("Could not assign group with id " + accessPermission.getArticleId() + " to folder");
-                return null;
-            }
-            permission.setGroup(group);
-        } else {
-            Account account = DAOFactory.getAccountDAO().get(accessPermission.getArticleId());
-            if (account == null) {
-                Logger.error("Could not assign account with id " + accessPermission.getArticleId() + " to folder");
-                return null;
-            }
-            permission.setAccount(account);
+        for (Folder folder : transferredFolders) {
+            FolderDetails details = folder.toDataTransferObject();
+            long folderSize = dao.getFolderSize(folder.getId(), null, false);
+            details.setCount(folderSize);
+            if (folder.getCreationTime() != null)
+                details.setCreationTime(folder.getCreationTime().getTime());
+            folderDetails.add(details);
         }
 
-        permission.setCanRead(accessPermission.isCanRead());
-        permission.setCanWrite(accessPermission.isCanWrite());
-        AccessPermission created = permissionDAO.create(permission).toDataTransferObject();
-        if (folder.getType() == FolderType.PRIVATE) {
-            folder.setType(FolderType.SHARED);
-            folder.setModificationTime(new Date());
-            dao.update(folder);
-        }
-
-        // propagate permission
-        if (folder.isPropagatePermissions()) {
-            permissionsController.propagateFolderPermissions(userId, folder, true);
-        }
-        return created;
-    }
-
-    public boolean disablePublicReadAccess(String userId, long folderId) {
-        Folder folder = dao.get(folderId);
-        if (folder == null)
-            return false;
-
-        authorization.expectWrite(userId, folder);
-
-        GroupController groupController = new GroupController();
-        Group publicGroup = groupController.createOrRetrievePublicGroup();
-
-        permissionDAO.removePermission(null, folder, null, null, publicGroup, true, false);
-        if (folder.isPropagatePermissions()) {
-            for (Entry folderContent : folder.getContents()) {
-                permissionsController.disablePublicReadAccess(userId, folderContent.getId());
-            }
-        }
-        return true;
+        return folderDetails;
     }
 
     protected Account getAccount(String userId) {

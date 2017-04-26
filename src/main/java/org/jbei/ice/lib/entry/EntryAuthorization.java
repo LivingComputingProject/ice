@@ -11,6 +11,7 @@ import org.jbei.ice.storage.model.Entry;
 import org.jbei.ice.storage.model.Folder;
 import org.jbei.ice.storage.model.Group;
 
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -29,11 +30,9 @@ public class EntryAuthorization extends Authorization<Entry> {
 
     public boolean canRead(String userId, Entry entry) {
         // super checks for owner or admin
-        if (new PermissionsController().isPubliclyVisible(entry))
-            return true;
-
-        if (userId == null)
-            return false;
+        if (userId == null) {
+            return new PermissionsController().isPubliclyVisible(entry);
+        }
 
         if (super.canRead(userId, entry) || super.canWrite(userId, entry))
             return true;
@@ -41,7 +40,7 @@ public class EntryAuthorization extends Authorization<Entry> {
         Account account = getAccount(userId);
 
         // get groups for account. if account is null, this will return everyone group
-        Set<Group> accountGroups = groupController.getAllGroups(account);
+        List<Group> accountGroups = groupController.getAllGroups(account);
 
         // check read permission through group membership
         // ie. belongs to group that has read privileges for entry (or a group whose parent group does)
@@ -85,6 +84,14 @@ public class EntryAuthorization extends Authorization<Entry> {
         if (permissionDAO.hasPermissionMulti(entry, null, account, null, false, true))
             return true;
 
+        // check group permissions
+        // get groups for account
+        List<Group> accountGroups = groupController.getAllGroups(account);
+
+        // check group permissions
+        if (permissionDAO.hasPermissionMulti(entry, null, null, accountGroups, false, true))
+            return true;
+
         return false;
     }
 
@@ -103,13 +110,15 @@ public class EntryAuthorization extends Authorization<Entry> {
             return true;
 
         // get groups for account
-        Set<Group> accountGroups = groupController.getAllGroups(account);
+        List<Group> accountGroups = groupController.getAllGroups(account);
 
         // check group permissions
         if (permissionDAO.hasPermissionMulti(entry, null, null, accountGroups, false, true))
             return true;
 
         Set<Folder> entryFolders = entry.getFolders();
+        if (entryFolders == null || entryFolders.isEmpty())
+            return false;
 
         // can any group that account belongs to read any folder that entry is contained in?
         if (permissionDAO.hasPermissionMulti(null, entryFolders, null, accountGroups, false, true))

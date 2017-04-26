@@ -1,15 +1,15 @@
 package org.jbei.ice.lib.bulkupload;
 
 import org.apache.commons.lang3.StringUtils;
-import org.jbei.ice.lib.dto.bulkupload.EntryField;
+import org.jbei.ice.lib.dto.entry.EntryField;
 import org.jbei.ice.lib.dto.entry.EntryType;
 import org.jbei.ice.lib.shared.BioSafetyOption;
 import org.jbei.ice.lib.shared.StatusType;
 import org.jbei.ice.storage.DAOFactory;
 import org.jbei.ice.storage.model.*;
 
-import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -54,7 +54,7 @@ public class BulkUploadValidation {
      * Validation is required on the business logic side as a result of the ability to save drafts
      */
     private void validate() {
-        ArrayList<Long> contentIds = DAOFactory.getBulkUploadDAO().getEntryIds(this.upload);
+        List<Long> contentIds = DAOFactory.getBulkUploadDAO().getEntryIds(this.upload);
         for (long contentId : contentIds) {
             Entry entry = DAOFactory.getEntryDAO().get(contentId);
             validateEntry(entry);

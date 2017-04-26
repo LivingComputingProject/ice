@@ -45,7 +45,7 @@ public class TokenVerificationTest {
         String verified = verification.verifyAPIKey(key.getToken(), key.getClientId(), userId);
         Assert.assertEquals(verified, userId);
 
-        // verify for another user
+        // verify for another user (cannot use someone else's token)
         Account account1 = AccountCreator.createTestAccount("testVerifyAPIKey2", false);
         String userId1 = account1.getEmail();
         Assert.assertEquals(userId1, verification.verifyAPIKey(key.getToken(), key.getClientId(), userId1));
@@ -60,11 +60,11 @@ public class TokenVerificationTest {
         TokenHash tokenHash = new TokenHash();
         remotePartner.setSalt(tokenHash.generateSalt());
         String token = tokenHash.generateRandomToken();
-        String hash = tokenHash.encryptPassword(token + remotePartner.getUrl(), remotePartner.getSalt());
+        String hash = tokenHash.encrypt(token + remotePartner.getUrl(), remotePartner.getSalt());
         remotePartner.setAuthenticationToken(hash);
         remotePartner.setApiKey("foo");
         remotePartner.setAdded(new Date());
         Assert.assertNotNull(DAOFactory.getRemotePartnerDAO().create(remotePartner));
-        Assert.assertTrue(verification.verifyPartnerToken(remotePartner.getUrl(), token));
+        Assert.assertNotNull(verification.verifyPartnerToken(remotePartner.getUrl(), token));
     }
 }

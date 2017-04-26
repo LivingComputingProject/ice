@@ -1,11 +1,14 @@
 package org.jbei.ice.lib.entry.sample;
 
+import com.opencsv.CSVWriter;
+import org.apache.commons.lang3.StringUtils;
 import org.jbei.ice.lib.access.PermissionException;
 import org.jbei.ice.lib.account.AccountType;
 import org.jbei.ice.lib.common.logging.Logger;
 import org.jbei.ice.lib.dto.ConfigurationKey;
+import org.jbei.ice.lib.dto.StorageLocation;
 import org.jbei.ice.lib.dto.sample.*;
-import org.jbei.ice.lib.utils.Emailer;
+import org.jbei.ice.lib.email.EmailFactory;
 import org.jbei.ice.lib.utils.Utils;
 import org.jbei.ice.storage.DAOException;
 import org.jbei.ice.storage.DAOFactory;
@@ -15,9 +18,11 @@ import org.jbei.ice.storage.model.Account;
 import org.jbei.ice.storage.model.Entry;
 import org.jbei.ice.storage.model.Request;
 
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.util.*;
+import org.jbei.ice.lib.utils.Emailer;
 
 /**
  * Handler for sample requests
@@ -38,7 +43,7 @@ public class RequestRetriever {
      * Creates a new sample request for the specified user and specified entry.
      * The default status is "IN CART"
      */
-    public ArrayList<SampleRequest> placeSampleInCart(String userId, SampleRequest sampleRequest) {
+    public boolean placeSampleInCart(String userId, SampleRequest sampleRequest) {
         long partId = sampleRequest.getPartData().getId();
         Entry entry = entryDAO.get(sampleRequest.getPartData().getId());
 
@@ -51,7 +56,7 @@ public class RequestRetriever {
         try {
             List<Request> requests = dao.getSampleRequestByStatus(account, entry, SampleRequestStatus.IN_CART);
             if (requests != null && !requests.isEmpty())
-                return getSampleRequestsInCart(account);
+                return true;
 
             Request request = new Request();
             request.setAccount(account);
@@ -62,25 +67,12 @@ public class RequestRetriever {
             request.setType(sampleRequest.getRequestType());
             request.setRequested(new Date(System.currentTimeMillis()));
             request.setUpdated(request.getRequested());
-            dao.create(request);
-            return getSampleRequestsInCart(account);
+            request.setPlateDescription(sampleRequest.getPlateDescription());
+            return dao.create(request) != null;
         } catch (DAOException e) {
             Logger.error(e);
-            return null;
+            return false;
         }
-    }
-
-    protected ArrayList<SampleRequest> getSampleRequestsInCart(Account account) {
-        int count = dao.getCount(account);
-        String sort = "requested";
-        List<Request> requestList = dao.getAccountRequests(account, SampleRequestStatus.IN_CART, 0, count, sort, false);
-
-        ArrayList<SampleRequest> requests = new ArrayList<>();
-
-        for (Request request : requestList)
-            requests.add(request.toDataTransferObject());
-
-        return requests;
     }
 
     public UserSamples getUserSamples(String userId, SampleRequestStatus status, int start, int limit, String sort,
@@ -113,7 +105,7 @@ public class RequestRetriever {
 
         for (Request request : results) {
             SampleRequest sampleRequest = request.toDataTransferObject();
-            ArrayList<PartSample> location = sampleService.retrieveEntrySamples(userId, request.getEntry().getId());
+            ArrayList<PartSample> location = sampleService.retrieveEntrySamples(userId, Long.toString(request.getEntry().getId()));
             sampleRequest.setLocation(location);
             samples.getRequests().add(sampleRequest);
         }
@@ -191,5 +183,77 @@ public class RequestRetriever {
         }
 
         return true;
+    }
+
+    public ByteArrayOutputStream generateCSVFile(String userId, ArrayList<Long> ids) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        OutputStreamWriter streamWriter = new OutputStreamWriter(out);
+        try (CSVWriter writer = new CSVWriter(streamWriter)) {
+            SampleService sampleService = new SampleService();
+
+            Set<Long> idSet = new HashSet<>(ids);
+            for (long id : idSet) {
+                Request request = dao.get(id);
+                if (request == null)
+                    continue;
+
+                String[] line = new String[3];
+                Entry entry = request.getEntry();
+                line[0] = entry.getName();
+
+                ArrayList<PartSample> samples = sampleService.retrieveEntrySamples(userId, Long.toString(request.getEntry().getId()));
+                String plate = null;
+                String well = null;
+
+                if (samples.size() == 1) {
+                    if (samples.get(0).getLocation().getType() == SampleType.GENERIC) {
+                        plate = "generic";
+                        well = "";
+                    }
+                } else {
+                    for (PartSample partSample : samples) {
+                        if (partSample.getLabel().contains("backup"))
+                            continue;
+
+                        // get plate
+                        StorageLocation location = partSample.getLocation();
+                        if (location == null)
+                            continue;
+
+                        if (location.getType() == SampleType.PLATE96) {
+                            plate = location.getDisplay().replaceFirst("^0+(?!$)", "");
+                        }
+
+                        StorageLocation child = location.getChild();
+                        while (child != null) {
+                            if (child.getType() == SampleType.WELL) {
+                                well = child.getDisplay();
+                                break;
+                            }
+                            child = child.getChild();
+                        }
+
+                        if (!StringUtils.isEmpty(well) && !StringUtils.isEmpty(plate))
+                            break;
+                    }
+                }
+
+                if (plate == null || well == null)
+                    continue;
+
+                String email = request.getAccount().getEmail();
+                int index = email.indexOf('@');
+                char typeChar = request.getType() == SampleRequestType.LIQUID_CULTURE ? 'L' : 'A';
+
+                line[1] = typeChar + " " + plate + " " + well + " " + email.substring(0, index);
+                line[1] = line[1].trim().replaceAll(" +", " ");
+                line[2] = request.getPlateDescription().trim().replaceAll(" +", " ");
+                if (request.getGrowthTemperature() != null)
+                    line[2] += " " + request.getGrowthTemperature();
+
+                writer.writeNext(line);
+            }
+        }
+        return out;
     }
 }

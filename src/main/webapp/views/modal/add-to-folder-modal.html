@@ -1,5 +1,5 @@
 <div class="modal-header">
-    <button type="button" class="close" ng-click="closeModal()">&times;</button>
+    <button type="button" class="close" ng-click="$dismiss('cancel')">&times;</button>
     <span class="bebas modal-title" style="color: #657B83;font-size: 19px">
         <i class="fa fa-fw fa-folder"></i> &nbsp;Add selected entries to folder(s)</span>
 </div>
@@ -11,7 +11,7 @@
         background-color: #dcdcdc; border-radius: 0;">
             <i class="fa fa-filter"></i>
         </span>
-        <input type="text" ng-model="search.name" class="input_box" style="border-width: 1px 1px 1px 0"
+        <input type="text" ng-model="search.folderName" class="input_box" style="border-width: 1px 1px 1px 0"
                placeholder="Filter folders">
 
         <small class="text-muted pull-right">
@@ -24,7 +24,8 @@
     <div style="max-height: 200px; overflow: auto">
         <!--displays list of folders that the user can add entries to to-->
         <span class="pad-8" ng-if="!userFolders || !userFolders.length">
-            No personal folders available
+            <br>
+            &nbsp; &nbsp;<i>No personal folders available</i>
         </span>
 
         <table class="table font-90em table-hover table-condensed" ng-if="userFolders">
@@ -36,9 +37,12 @@
                        ng-class="{'fa-square-o':!folder.isSelected, 'fa-check-square-o':folder.isSelected}"></i>
                 </td>
                 <td>
-                    {{folder.name}}
+                    {{folder.folderName}}
                     <br>
                     <small class="text-muted">{{folder.type}}</small>
+                    <small ng-if="folder.type == 'REMOTE'">(Shared by {{folder.owner.email}} on
+                        <a ng-href="{{folder.partner.url}}">{{folder.remotePartner.name}}</a>)
+                    </small>
                 </td>
             </tr>
         </table>

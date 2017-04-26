@@ -7,17 +7,22 @@ import org.jbei.ice.lib.account.authentication.IAuthentication;
 import org.jbei.ice.lib.account.authentication.LocalAuthentication;
 import org.jbei.ice.lib.common.logging.Logger;
 import org.jbei.ice.lib.dto.ConfigurationKey;
-import org.jbei.ice.lib.utils.Emailer;
+import org.jbei.ice.lib.dto.group.GroupType;
+import org.jbei.ice.lib.email.EmailFactory;
 import org.jbei.ice.lib.utils.Utils;
 import org.jbei.ice.storage.DAOFactory;
 import org.jbei.ice.storage.hibernate.dao.AccountDAO;
 import org.jbei.ice.storage.hibernate.dao.AccountPreferencesDAO;
+import org.jbei.ice.storage.hibernate.dao.GroupDAO;
 import org.jbei.ice.storage.model.Account;
 import org.jbei.ice.storage.model.AccountPreferences;
 import org.jbei.ice.storage.model.Group;
 
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+import org.jbei.ice.lib.utils.Emailer;
 
 /**
  * ABI to manipulate {@link Account} objects.
@@ -34,6 +39,7 @@ public class AccountController {
     private static final String ADMIN_ACCOUNT_PASSWORD = "Administrator";
     private final AccountDAO dao;
     private final AccountPreferencesDAO accountPreferencesDAO;
+    private final GroupDAO groupDAO;
 
     /**
      * Default constructor.
@@ -41,6 +47,7 @@ public class AccountController {
     public AccountController() {
         dao = DAOFactory.getAccountDAO();
         accountPreferencesDAO = DAOFactory.getAccountPreferencesDAO();
+        groupDAO = DAOFactory.getGroupDAO();
     }
 
     /**
@@ -84,16 +91,6 @@ public class AccountController {
         AccountTransfer result = dao.update(account).toDataTransferObject();
         result.setAdmin(isAdministrator(account.getEmail()));
         return result;
-    }
-
-    /**
-     * Retrieve account from the database by database id.
-     *
-     * @param id Database id of account
-     * @return Account for the id
-     */
-    public Account get(final long id) {
-        return dao.get(id);
     }
 
     /**
@@ -170,7 +167,7 @@ public class AccountController {
      *                             the same but the <code>userId</code> does not have administrative privileges
      */
     public AccountTransfer updatePassword(String userId, long id, AccountTransfer transfer) throws PermissionException {
-        Account account = get(id);
+        Account account = dao.get(id);
         if (account == null) {
             throw new IllegalArgumentException("Could not retrieve account by id " + id);
         }
@@ -254,7 +251,7 @@ public class AccountController {
                 .append("https://").append(server).append("/profile/").append(account.getId())
                 .append("\n\nThank you.");
 
-        Emailer.send(info.getEmail(), subject, stringBuilder.toString());
+        Emailer.send(account.getEmail(), subject, stringBuilder.toString());
         info.setPassword(newPassword);
         return info;
     }
@@ -275,8 +272,7 @@ public class AccountController {
         adminAccount.setInitials("");
         adminAccount.setInstitution("");
         adminAccount.setSalt(Utils.generateSaltForUserAccount());
-        adminAccount.setPassword(AccountUtils.encryptNewUserPassword(ADMIN_ACCOUNT_PASSWORD,
-                adminAccount.getSalt()));
+        adminAccount.setPassword(AccountUtils.encryptNewUserPassword(ADMIN_ACCOUNT_PASSWORD, adminAccount.getSalt()));
         adminAccount.setDescription("Administrator Account");
 
         adminAccount.setIp("");
@@ -371,7 +367,7 @@ public class AccountController {
      * @param ip       IP Address of the user.
      * @return the account identifier (email) on a successful login, otherwise {@code null}
      */
-    public String authenticate(final String login, final String password, final String ip) {
+    protected Account authenticate(final String login, final String password, final String ip) {
         final IAuthentication authentication = new LocalAuthentication();
         String email;
 
@@ -386,29 +382,44 @@ public class AccountController {
             return null;
         }
 
-        final Account account = dao.getByEmail(email);
-        if (account != null) {
-            AccountPreferences accountPreferences = accountPreferencesDAO
-                    .getAccountPreferences(account);
+        Account account = dao.getByEmail(email);
+        if (account == null)
+            return null;
 
-            if (accountPreferences == null) {
-                accountPreferences = new AccountPreferences();
-                accountPreferences.setAccount(account);
-                saveAccountPreferences(accountPreferences);
-            }
+        AccountPreferences accountPreferences = accountPreferencesDAO.getAccountPreferences(account);
 
-            account.setIp(ip);
-            account.setLastLoginTime(Calendar.getInstance().getTime());
-            save(account);
-            UserSessions.createNewSessionForUser(account.getEmail());
-            return email;
+        if (accountPreferences == null) {
+            accountPreferences = new AccountPreferences();
+            accountPreferences.setAccount(account);
+            accountPreferencesDAO.create(accountPreferences);
         }
 
-        return null;
+        // add to public groups
+        List<Group> groups = groupDAO.getGroupsBy(GroupType.PUBLIC, true);
+        try {
+            if (groups != null) {
+                for (Group group : groups) {
+                    if (!account.getGroups().contains(group)) {
+                        account.getGroups().add(group);
+                    }
+                }
+                dao.update(account);
+            }
+        } catch (Exception e) {
+            Logger.error(e);
+        }
+
+        account.setIp(ip);
+        account.setLastLoginTime(Calendar.getInstance().getTime());
+        account = save(account);
+        UserSessions.createNewSessionForUser(account.getEmail());
+        return account;
     }
 
+    /**
+     * Sets a 2 seconds delay on login authentication failure to prevent login/password brute force hacking
+     */
     private void loginFailureCooldown() {
-        // sets 2 seconds delay on login to prevent login/password brute force hacking
         try {
             Thread.sleep(2000);
         } catch (final InterruptedException ie) {
@@ -427,17 +438,12 @@ public class AccountController {
      * @return {@link AccountTransfer}
      */
     public AccountTransfer authenticate(final AccountTransfer transfer) {
-        final String email = authenticate(transfer.getEmail(), transfer.getPassword(), "");
-
-        if (email == null) {
-            return null;
-        }
-
-        final Account account = dao.getByEmail(email);
+        final Account account = authenticate(transfer.getEmail(), transfer.getPassword(), "");
         if (account == null) {
             return null;
         }
 
+        String email = account.getEmail();
         final AccountTransfer info = account.toDataTransferObject();
         info.setLastLogin(account.getLastLoginTime().getTime());
         info.setId(account.getId());
@@ -457,37 +463,6 @@ public class AccountController {
     }
 
     /**
-     * Save {@link AccountPreferences} to the database.
-     *
-     * @param accountPreferences
-     */
-    public void saveAccountPreferences(final AccountPreferences accountPreferences) {
-        accountPreferencesDAO.create(accountPreferences);
-    }
-
-    /**
-     * @param userId
-     * @param query
-     * @param limit
-     * @return accounts matching the query
-     */
-    public List<AccountTransfer> getMatchingAccounts(final String userId, final String query,
-                                                     final int limit) {
-        // TODO account object is never used?
-        getByEmail(userId);
-        final Set<Account> matches = dao.getMatchingAccounts(query, limit);
-        final ArrayList<AccountTransfer> result = new ArrayList<>();
-        for (final Account match : matches) {
-            final AccountTransfer info = new AccountTransfer();
-            info.setEmail(match.getEmail());
-            info.setFirstName(match.getFirstName());
-            info.setLastName(match.getLastName());
-            result.add(info);
-        }
-        return result;
-    }
-
-    /**
      * @param id
      * @param email
      */
@@ -497,7 +472,7 @@ public class AccountController {
             throw new IllegalArgumentException("Could not find account " + email);
         }
 
-        final Group group = DAOFactory.getGroupDAO().get(id);
+        final Group group = groupDAO.get(id);
         if (group == null) {
             throw new IllegalArgumentException("Could not find group " + id);
         }

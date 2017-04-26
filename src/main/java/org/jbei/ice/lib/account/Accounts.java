@@ -7,6 +7,7 @@ import org.jbei.ice.storage.hibernate.dao.AccountDAO;
 import org.jbei.ice.storage.model.Account;
 import org.jbei.ice.storage.model.Group;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -58,6 +59,33 @@ public class Accounts {
         long count = accountDAO.getAccountsCount(filter);
         results.setResultCount(count);
         return results;
+    }
+
+    public List<AccountTransfer> filterAccount(String userId, String token, int limit) {
+        List<Account> results = accountDAO.getMatchingAccounts(token, limit);
+        List<AccountTransfer> accountTransfers = new ArrayList<>();
+        for (Account match : results) {
+            AccountTransfer info = new AccountTransfer();
+            info.setId(match.getId());
+            info.setEmail(match.getEmail());
+            info.setFirstName(match.getFirstName());
+            info.setLastName(match.getLastName());
+            accountTransfers.add(info);
+        }
+        return accountTransfers;
+    }
+
+    public AccountTransfer getAccount(String requester, String userId) {
+        // todo : who can request the account information?  if in a public group together then can return
+        Account account;
+        if (userId.matches("\\d+(\\.\\d+)?")) {
+            account = this.accountDAO.get(Long.decode(userId));
+        } else {
+            account = this.accountDAO.getByEmail(userId);
+        }
+        if (account == null)
+            return null;
+        return account.toDataTransferObject();
     }
 
     protected long getNumberOfOwnerEntries(Account account, String ownerEmail) {

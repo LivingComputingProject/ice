@@ -10,12 +10,9 @@ import org.jbei.ice.lib.folder.FolderController;
 import org.jbei.ice.storage.DAOFactory;
 import org.jbei.ice.storage.hibernate.dao.EntryDAO;
 import org.jbei.ice.storage.model.Account;
-import org.jbei.ice.storage.model.Group;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Represents the fixed collections supported in the eco-system
@@ -38,12 +35,18 @@ public class Collections {
         collection.setAvailable(visibleEntries.getEntryCount());
         collection.setDeleted(entryDAO.getDeletedCount(userId));
 
-        collection.setPersonal(getNumberOfOwnerEntries(userId));
+        long ownerEntryCount = DAOFactory.getEntryDAO().ownerEntryCount(userId);
+        collection.setPersonal(ownerEntryCount);
         SharedEntries sharedEntries = new SharedEntries(userId);
-        collection.setShared(sharedEntries.getNumberofEntries(null));
+        collection.setShared(sharedEntries.getNumberOfEntries(null));
         collection.setDrafts(entryDAO.getByVisibilityCount(userId, Visibility.DRAFT, null));
-        if (account.getType() == AccountType.ADMIN)
-            collection.setPending(entryDAO.getPendingCount());
+
+        if (account.getType() != AccountType.ADMIN)
+            return collection;
+
+        // admin only options
+        collection.setPending(entryDAO.getByVisibilityCount(Visibility.PENDING));
+        collection.setTransferred(entryDAO.getByVisibilityCount(Visibility.TRANSFERRED));
         return collection;
     }
 
@@ -73,6 +76,9 @@ public class Collections {
             case SHARED:
                 return controller.getSharedUserFolders(userId);
 
+            case TRANSFERRED:
+                return controller.getTransferredFolders(userId);
+
             case DELETED:
                 // not able to delete folders under the deleted collections yet
                 return new ArrayList<>();
@@ -80,10 +86,5 @@ public class Collections {
             default:
                 throw new IllegalArgumentException("Unknown collection type " + type);
         }
-    }
-
-    protected long getNumberOfOwnerEntries(String ownerEmail) {
-        Set<Group> accountGroups = new HashSet<>(account.getGroups());
-        return DAOFactory.getEntryDAO().ownerEntryCount(account, ownerEmail, accountGroups);
     }
 }

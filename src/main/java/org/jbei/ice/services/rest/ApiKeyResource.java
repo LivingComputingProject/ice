@@ -1,6 +1,9 @@
 package org.jbei.ice.services.rest;
 
+import org.apache.commons.lang3.StringUtils;
+import org.jbei.ice.lib.access.PermissionException;
 import org.jbei.ice.lib.account.UserApiKeys;
+import org.jbei.ice.lib.dto.access.AccessKey;
 
 import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
@@ -22,8 +25,14 @@ public class ApiKeyResource extends RestResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response createApiKey(@QueryParam("client_id") String clientId) {
         String userId = requireUserId();
+        if (StringUtils.isEmpty(clientId))
+            throw new WebApplicationException(Response.Status.BAD_REQUEST);
+        log(userId, "creating api key for client: " + clientId);
         UserApiKeys apiKeys = new UserApiKeys(userId);
-        return super.respond(apiKeys.requestKey(clientId));
+        AccessKey key = apiKeys.requestKey(clientId);
+        if (key == null)
+            throw new WebApplicationException("Could not create api key with client id " + clientId);
+        return super.respond(key);
     }
 
     /**
@@ -38,9 +47,21 @@ public class ApiKeyResource extends RestResource {
                                @DefaultValue("false") @QueryParam("getAll") boolean getAll) {
         String userId = requireUserId();
         UserApiKeys apiKeys = new UserApiKeys(userId);
-        return super.respond(apiKeys.getKeys(limit, offset, sort, asc, getAll));
+        try {
+            return super.respond(apiKeys.getKeys(limit, offset, sort, asc, getAll));
+        } catch (PermissionException pe) {
+            throw new WebApplicationException(Response.Status.FORBIDDEN);
+        }
     }
 
+    /**
+     * Delete a specified API key
+     *
+     * @param secret
+     * @param clientId
+     * @param id
+     * @return
+     */
     @DELETE
     @Path("/{id}")
     @Produces(MediaType.APPLICATION_JSON)

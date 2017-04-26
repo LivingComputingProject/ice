@@ -38,7 +38,7 @@ public class VisibleEntries {
     }
 
     public List<PartData> getEntries(ColumnField field, boolean asc, int start, int limit, String filter) {
-        Set<Entry> results;
+        List<Entry> results;
 
         if (isAdmin) {
             // no filters
@@ -55,7 +55,6 @@ public class VisibleEntries {
         ArrayList<PartData> data = new ArrayList<>();
         for (Entry entry : results) {
             PartData info = ModelToInfoFactory.createTableViewData(account.getEmail(), entry, false);
-            info.setViewCount(DAOFactory.getAuditDAO().getHistoryCount(entry));
             data.add(info);
         }
 

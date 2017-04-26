@@ -1,6 +1,6 @@
 package org.jbei.ice.lib.dto.entry;
 
-import org.jbei.ice.lib.dto.permission.AccessPermission;
+import org.jbei.ice.lib.dto.access.AccessPermission;
 import org.jbei.ice.storage.IDataTransferModel;
 
 import java.util.ArrayList;
@@ -21,7 +21,6 @@ public class PartData implements IDataTransferModel {
 
     private int index;
     private String recordId;
-    private String versionId;
     private String name;
     private String owner;
     private String ownerEmail;
@@ -59,7 +58,6 @@ public class PartData implements IDataTransferModel {
     private ArrayList<CustomField> parameters;
     private boolean canEdit; // whether current user that requested this entry info has write privs
     private ArrayList<AccessPermission> accessPermissions;
-    private String sbolVisualURL;
     private boolean publicRead;
     private ArrayList<PartData> linkedParts;
 
@@ -82,14 +80,6 @@ public class PartData implements IDataTransferModel {
 
     public void setRecordId(String recordId) {
         this.recordId = recordId;
-    }
-
-    public String getVersionId() {
-        return versionId;
-    }
-
-    public void setVersionId(String versionId) {
-        this.versionId = versionId;
     }
 
     public EntryType getType() {
@@ -328,18 +318,6 @@ public class PartData implements IDataTransferModel {
 
     public void setHasOriginalSequence(boolean hasOriginalSequence) {
         this.hasOriginalSequence = hasOriginalSequence;
-    }
-
-    /**
-     * @return the url for the SBOL Visual image or the actual pigeon script if being retrieved from
-     *         another registry
-     */
-    public String getSbolVisualURL() {
-        return sbolVisualURL;
-    }
-
-    public void setSbolVisualURL(String sbolVisualURL) {
-        this.sbolVisualURL = sbolVisualURL;
     }
 
     public boolean isPublicRead() {

@@ -1,5 +1,6 @@
 package org.jbei.ice.lib.dto;
 
+import org.jbei.ice.lib.email.Type;
 import org.jbei.ice.storage.IDataTransferModel;
 
 /**
@@ -25,12 +26,16 @@ public enum ConfigurationKey implements IDataTransferModel {
     PART_NUMBER_DIGITAL_SUFFIX("000001"),
     PART_NUMBER_DELIMITER("_"),
 
-    BLAST_INSTALL_DIR("/usr/bin"),
+    BLAST_INSTALL_DIR(""),
 
+    ADD_TO_CART_DEFAULT_SET_TO_LOCAL("YES"),
     NEW_REGISTRATION_ALLOWED("NO"),
     PASSWORD_CHANGE_ALLOWED("YES"),
     PROFILE_EDIT_ALLOWED("YES"),
     JOIN_WEB_OF_REGISTRIES("NO"),
+    RESTRICT_PUBLIC_ENABLE("NO"),
+    EMAILER(Type.CUSTOM.name()),
+    GMAIL_APPLICATION_PASSWORD(""),
     WEB_OF_REGISTRIES_MASTER("registry.jbei.org");
 
     private String defaultValue;

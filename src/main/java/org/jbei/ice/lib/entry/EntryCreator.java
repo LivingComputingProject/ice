@@ -2,9 +2,10 @@ package org.jbei.ice.lib.entry;
 
 import org.apache.commons.lang3.StringUtils;
 import org.jbei.ice.lib.dto.FeaturedDNASequence;
+import org.jbei.ice.lib.dto.access.AccessPermission;
+import org.jbei.ice.lib.dto.entry.EntryType;
 import org.jbei.ice.lib.dto.entry.PartData;
 import org.jbei.ice.lib.dto.entry.Visibility;
-import org.jbei.ice.lib.dto.permission.AccessPermission;
 import org.jbei.ice.lib.entry.sequence.SequenceController;
 import org.jbei.ice.lib.group.GroupController;
 import org.jbei.ice.lib.search.blast.BlastPlus;
@@ -23,7 +24,7 @@ import java.util.Calendar;
 /**
  * @author Hector Plahar
  */
-public class EntryCreator {
+public class EntryCreator extends HasEntry {
 
     private final EntryDAO dao;
     private final PermissionDAO permissionDAO;
@@ -147,7 +148,14 @@ public class EntryCreator {
         permissionDAO.create(permission);
     }
 
-    public long createPart(String userId, PartData part) {
+    /**
+     * Creates a new entry using the passed data
+     *
+     * @param userId unique identifier for user creating entry
+     * @param part   data used to create new part
+     * @return new part data id and record id information
+     */
+    public PartData createPart(String userId, PartData part) {
         Entry entry = InfoToModelFactory.infoToEntry(part);
         Account account = DAOFactory.getAccountDAO().getByEmail(userId);
 
@@ -184,13 +192,24 @@ public class EntryCreator {
         }
 
         entry = createEntry(account, entry, part.getAccessPermissions());
-        return entry.getId();
+        PartData partData = new PartData(part.getType());
+        partData.setId(entry.getId());
+        partData.setRecordId(entry.getRecordId());
+        return partData;
     }
 
-    public long copyPart(String userId, String sourceRecordId) {
-        Entry entry = dao.getByRecordId(sourceRecordId);
+    /**
+     * Creates a copy of
+     *
+     * @param userId   identifier for user making request
+     * @param sourceId unique identifier for part acting as source of copy. Can be the part id, uuid or id
+     * @return wrapper around the id and record id of the newly created entry
+     * @throws IllegalArgumentException if the source part for the copy cannot be located using the identifier
+     */
+    public PartData copyPart(String userId, String sourceId) {
+        Entry entry = getEntry(sourceId);
         if (entry == null)
-            throw new IllegalArgumentException("Could not retrieve entry \"" + sourceRecordId + "\" for copy");
+            throw new IllegalArgumentException("Could not retrieve entry \"" + sourceId + "\" for copy");
 
         // check permission (expecting read permission)
         entryAuthorization.expectRead(userId, entry);
@@ -209,6 +228,8 @@ public class EntryCreator {
         entry.setName(entry.getName() + " (copy)");
         entry.setRecordId(Utils.generateUUID());
         entry.setVersionId(entry.getRecordId());
+        entry.setOwnerEmail(account.getEmail());
+        entry.setOwner(account.getFullName());
         entry = createEntry(account, entry, new ArrayList<>());
 
         // check sequence
@@ -221,6 +242,9 @@ public class EntryCreator {
             BlastPlus.scheduleBlastIndexRebuildTask(true);
         }
 
-        return entry.getId();
+        PartData copy = new PartData(EntryType.nameToType(entry.getRecordType()));
+        copy.setId(entry.getId());
+        copy.setRecordId(entry.getRecordId());
+        return copy;
     }
 }

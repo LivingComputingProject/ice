@@ -9,17 +9,21 @@ import java.io.IOException;
 import java.io.OutputStream;
 
 /**
- * Format to SBOL v1.1 using libSBOLj
+ * Format to SBOL using libSBOLj
  *
- * @author Hector Plahar, Timothy Ham
+ * @author Hector Plahar
  */
 public class SBOLFormatter extends AbstractFormatter {
+
+    public SBOLFormatter() {
+    }
 
     @Override
     public void format(Sequence sequence, OutputStream outputStream) throws FormatterException, IOException {
         SBOLVisitor visitor = new SBOLVisitor();
         visitor.visit(sequence);
-        SBOLFactory.write(createXmlDocument(visitor.getDnaComponent()), outputStream);
+        SBOLDocument sbolDocument = createXmlDocument(visitor.getDnaComponent());
+        SBOLFactory.write(sbolDocument, outputStream);
     }
 
     private SBOLDocument createXmlDocument(DnaComponent dnaComponent) {

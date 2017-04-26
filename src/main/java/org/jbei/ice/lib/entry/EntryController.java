@@ -1,23 +1,17 @@
 package org.jbei.ice.lib.entry;
 
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.jbei.ice.lib.access.PermissionException;
 import org.jbei.ice.lib.access.PermissionsController;
 import org.jbei.ice.lib.account.AccountController;
-import org.jbei.ice.lib.account.PreferencesController;
+import org.jbei.ice.lib.account.TokenHash;
 import org.jbei.ice.lib.common.logging.Logger;
-import org.jbei.ice.lib.dto.AuditType;
-import org.jbei.ice.lib.dto.DNASequence;
-import org.jbei.ice.lib.dto.History;
-import org.jbei.ice.lib.dto.bulkupload.EntryField;
+import org.jbei.ice.lib.dto.access.AccessPermission;
 import org.jbei.ice.lib.dto.comment.UserComment;
-import org.jbei.ice.lib.dto.entry.EntryType;
-import org.jbei.ice.lib.dto.entry.PartData;
-import org.jbei.ice.lib.dto.entry.PartStatistics;
-import org.jbei.ice.lib.dto.entry.Visibility;
-import org.jbei.ice.lib.dto.permission.AccessPermission;
+import org.jbei.ice.lib.dto.entry.*;
 import org.jbei.ice.lib.dto.sample.PartSample;
-import org.jbei.ice.lib.dto.user.PreferenceKey;
+import org.jbei.ice.lib.dto.web.RegistryPartner;
+import org.jbei.ice.lib.dto.web.WebEntries;
 import org.jbei.ice.lib.entry.sequence.SequenceAnalysisController;
 import org.jbei.ice.servlet.InfoToModelFactory;
 import org.jbei.ice.storage.DAOException;
@@ -26,36 +20,29 @@ import org.jbei.ice.storage.ModelToInfoFactory;
 import org.jbei.ice.storage.hibernate.dao.*;
 import org.jbei.ice.storage.model.*;
 
-import java.io.*;
 import java.util.*;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 /**
  * ABI to manipulate {@link Entry}s.
  *
- * @author Timothy Ham, Zinovii Dmytriv, Hector Plahar
+ * @author Timothy Ham, Zinovii Dmytriv, Hector Plahar, Elena Aravina
  */
-public class EntryController {
+public class EntryController extends HasEntry {
 
     private EntryDAO dao;
     private CommentDAO commentDAO;
     private SequenceDAO sequenceDAO;
-    private AuditDAO auditDAO;
     private PermissionsController permissionsController;
     private AccountController accountController;
     private final EntryAuthorization authorization;
-    private final SequenceAnalysisController sequenceAnalysisController;
 
     public EntryController() {
         dao = DAOFactory.getEntryDAO();
         commentDAO = DAOFactory.getCommentDAO();
         permissionsController = new PermissionsController();
-        sequenceAnalysisController = new SequenceAnalysisController();
         accountController = new AccountController();
         authorization = new EntryAuthorization();
         sequenceDAO = DAOFactory.getSequenceDAO();
-        auditDAO = DAOFactory.getAuditDAO();
     }
 
     /**
@@ -69,9 +56,13 @@ public class EntryController {
      * @param partId unique identifier for part being updated. This overrides the id in the partData object
      * @param part   information to update part with
      * @return unique identifier for part that was updated
+     * @throws IllegalArgumentException if the entry associated with the partId cannot be located
      */
     public long updatePart(String userId, long partId, PartData part) {
         Entry existing = dao.get(partId);
+        if (existing == null)
+            throw new IllegalArgumentException();
+
         authorization.expectWrite(userId, existing);
 
         Entry entry = InfoToModelFactory.updateEntryField(part, existing);
@@ -129,12 +120,9 @@ public class EntryController {
         }
     }
 
-    public PartData retrieveEntryTipDetails(String userId, String id) {
+    public PartData retrieveEntryTipDetails(String id) {
         Entry entry = getEntry(id);
         if (entry == null)
-            return null;
-
-        if (!permissionsController.isPubliclyVisible(entry) && !authorization.canRead(userId, entry))
             return null;
 
         return ModelToInfoFactory.createTipView(entry);
@@ -148,7 +136,7 @@ public class EntryController {
         authorization.expectRead(userId, entry);
 
         // comments
-        ArrayList<Comment> comments = commentDAO.retrieveComments(entry);
+        List<Comment> comments = commentDAO.retrieveComments(entry);
         ArrayList<UserComment> userComments = new ArrayList<>();
 
         for (Comment comment : comments) {
@@ -226,40 +214,28 @@ public class EntryController {
         return true;
     }
 
-    protected boolean canEdit(String userId, String depositor, Entry entry) {
-        return userId.equalsIgnoreCase(depositor) || authorization.canWriteThoroughCheck(userId, entry);
-    }
-
-    public ArrayList<History> getHistory(String userId, long entryId) {
-        Entry entry = dao.get(entryId);
-        if (entry == null)
-            return null;
-
-        authorization.expectWrite(userId, entry);
-        List<Audit> list = auditDAO.getAuditsForEntry(entry);
-        ArrayList<History> result = new ArrayList<>();
-        for (Audit audit : list) {
-            History history = audit.toDataTransferObject();
-            if (history.isLocalUser()) {
-                history.setAccount(accountController.getByEmail(history.getUserId()).toDataTransferObject());
-            }
-            result.add(history);
-        }
-        return result;
-    }
-
-    public boolean deleteHistory(String userId, long entryId, long historyId) {
+    public boolean deleteShotgunSequence(String userId, long entryId, long shotgunId) {
         Entry entry = dao.get(entryId);
         if (entry == null)
             return false;
 
-        authorization.expectWrite(userId, entry);
-        Audit audit = auditDAO.get(historyId);
-        if (audit == null)
-            return true;
+        ShotgunSequenceDAO shotgunSequenceDAO = DAOFactory.getShotgunSequenceDAO();
+        ShotgunSequence shotgunSequence = shotgunSequenceDAO.get(shotgunId);
+        if (shotgunSequence == null || !canEdit(userId, shotgunSequence.getDepositor(), entry))
+            return false;
 
-        auditDAO.delete(audit);
+        try {
+            new SequenceAnalysisController().removeShotgunSequence(shotgunSequence);
+        } catch (Exception e) {
+            Logger.error(e);
+            return false;
+        }
+
         return true;
+    }
+
+    protected boolean canEdit(String userId, String depositor, Entry entry) {
+        return userId.equalsIgnoreCase(depositor) || authorization.canWriteThoroughCheck(userId, entry);
     }
 
     public PartStatistics retrieveEntryStatistics(String userId, long entryId) {
@@ -272,7 +248,7 @@ public class EntryController {
         PartStatistics statistics = new PartStatistics();
         statistics.setEntryId(entryId);
         statistics.setCommentCount(commentDAO.getCommentCount(entry));
-        int sequenceCount = DAOFactory.getTraceSequenceDAO().getTraceSequenceCount(entry) +
+        int sequenceCount = DAOFactory.getTraceSequenceDAO().getCountByEntry(entry) +
                 DAOFactory.getShotgunSequenceDAO().getShotgunSequenceCount(entry);
         statistics.setSequenceCount(sequenceCount);
         int sampleCount = DAOFactory.getSampleDAO().getSampleCount(entry);
@@ -285,7 +261,10 @@ public class EntryController {
     }
 
     /**
-     * Moves the specified list of entries to the deleted folder
+     * Moves the specified list of entries to the deleted folder.
+     * If an already deleted entry (list of entries) is being deleted then
+     * the status "permanently deleted" is assigned, and these entries
+     * become invisible to everyone.
      *
      * @param userId unique identifier for user making the request. Must have write access privileges on the
      *               entries in the list
@@ -305,7 +284,12 @@ public class EntryController {
         // add to bin
         try {
             for (Entry entry : toTrash) {
-                entry.setVisibility(Visibility.DELETED.getValue());
+                if (entry.getVisibility() == Visibility.DELETED.getValue()) {
+                    entry.setVisibility(Visibility.PERMANENTLY_DELETED.getValue());
+                } else {
+                    entry.setVisibility(Visibility.DELETED.getValue());
+                }
+
                 dao.update(entry);
             }
         } catch (DAOException de) {
@@ -316,126 +300,94 @@ public class EntryController {
         return true;
     }
 
-    protected Entry getEntry(String id) {
-        Entry entry = null;
+    public PartData getRequestedEntry(String remoteUserId, String token, String entryId,
+                                      long folderId, RegistryPartner requestingPartner) {
+        Entry entry = getEntry(entryId);
+        if (entry == null)
+            return null;
 
-        // check if numeric
-        try {
-            entry = dao.get(Long.decode(id));
-        } catch (NumberFormatException nfe) {
-            // fine to ignore
+        // see folderContents.getRemoteSharedContents
+        Folder folder = DAOFactory.getFolderDAO().get(folderId);      // folder that the entry is contained in
+        if (folder == null) {
+            // must be a public entry (todo : move to separate method
+            if (!permissionsController.isPubliclyVisible(entry))
+                throw new PermissionException("Not a public entry");
+
+            return retrieveEntryDetails(null, entry);
         }
 
-        // check for part Id
-        if (entry == null)
-            entry = dao.getByPartNumber(id);
+        RemotePartner remotePartner = DAOFactory.getRemotePartnerDAO().getByUrl(requestingPartner.getUrl());
 
-        // check for global unique id
-        if (entry == null)
-            entry = dao.getByRecordId(id);
-
-        // get by unique name
-        if (entry == null) {
-            try {
-                return dao.getByUniqueName(id);
-            } catch (DAOException de) {
-                // fine to ignore
-                return null;
-            }
+        // check that the remote user has the right token
+        RemoteShareModel shareModel = DAOFactory.getRemoteShareModelDAO().get(remoteUserId, remotePartner, folder);
+        if (shareModel == null) {
+            Logger.error("Could not retrieve share model");
+            return null;
         }
 
-        return entry;
+        Permission permission = shareModel.getPermission(); // folder must match
+
+        // validate access token
+        TokenHash tokenHash = new TokenHash();
+        String secret = tokenHash.encrypt(folderId + remotePartner.getUrl() + remoteUserId, token);
+        if (!secret.equals(shareModel.getSecret())) {
+            throw new PermissionException("Secret does not match");
+        }
+
+        // check that entry id is contained in folder
+        return retrieveEntryDetails(null, entry);
     }
 
     public PartData retrieveEntryDetails(String userId, String id) {
-        try {
-            Entry entry = getEntry(id);
-            if (entry == null)
-                return null;
-
-            return retrieveEntryDetails(userId, entry);
-        } catch (Exception e) {
-            Logger.error(e);
+        Entry entry = getEntry(id);
+        if (entry == null)
             return null;
-        }
-    }
 
-    /**
-     * Retrieves and sets the default values for the entry. Some of these values (e.g. PI, and Funding Source)
-     * are set by individual users as part of their personal preferences
-     *
-     * @param userId Unique identifier for user requesting the values.
-     * @param type   entry type
-     * @return PartData object with the retrieve part defaults
-     */
-    public PartData getPartDefaults(String userId, EntryType type) {
-        PartData partData = new PartData(type);
-        PreferencesController preferencesController = new PreferencesController();
-
-        // pi defaults
-        String value = preferencesController.getPreferenceValue(userId, PreferenceKey.PRINCIPAL_INVESTIGATOR.name());
-        if (value != null) {
-            Account piAccount = accountController.getByEmail(value);
-            if (piAccount == null) {
-                partData.setPrincipalInvestigator(value);
-            } else {
-                partData.setPrincipalInvestigator(piAccount.getFullName());
-                partData.setPrincipalInvestigatorEmail(piAccount.getEmail());
-                partData.setPrincipalInvestigatorId(piAccount.getId());
-            }
-        }
-
-        // funding source defaults
-        value = preferencesController.getPreferenceValue(userId, PreferenceKey.FUNDING_SOURCE.name());
-        if (value != null) {
-            partData.setFundingSource(value);
-        }
-
-        // owner and creator details
-        Account account = accountController.getByEmail(userId);
-        if (account != null) {
-            partData.setOwner(account.getFullName());
-            partData.setOwnerEmail(account.getEmail());
-            partData.setCreator(partData.getOwner());
-            partData.setCreatorEmail(partData.getOwnerEmail());
-        }
-
-        // set the entry type defaults
-        return EntryUtil.setPartDefaults(partData);
-    }
-
-    protected PartData retrieveEntryDetails(String userId, Entry entry) {
         // user must be able to read if not public entry
         if (!permissionsController.isPubliclyVisible(entry))
             authorization.expectRead(userId, entry);
 
+        PartData partData = retrieveEntryDetails(userId, entry);
+        if (partData.getVisibility() == Visibility.REMOTE)
+            partData.setCanEdit(false);
+        else {
+            partData.setCanEdit(authorization.canWriteThoroughCheck(userId, entry));
+            partData.setPublicRead(permissionsController.isPubliclyVisible(entry));
+        }
+        return partData;
+    }
+
+    protected PartData retrieveEntryDetails(String userId, Entry entry) throws PermissionException {
+        if (entry.getVisibility() == Visibility.REMOTE.getValue()) {
+            WebEntries webEntries = new WebEntries();
+            PartData partData = webEntries.getPart(entry.getRecordId());
+            partData.setVisibility(Visibility.REMOTE);
+            partData.setId(entry.getId()); // id returned from remote is different from the local id
+            partData.getParents().clear(); // need to map parents to local
+            // todo : sequence data
+            return partData;
+        }
+
         PartData partData = ModelToInfoFactory.getInfo(entry);
         if (partData == null)
             return null;
-        boolean hasSequence = sequenceDAO.hasSequence(entry.getId());
 
+        // retrieve sequence information
+        boolean hasSequence = sequenceDAO.hasSequence(entry.getId());
         partData.setHasSequence(hasSequence);
         boolean hasOriginalSequence = sequenceDAO.hasOriginalSequence(entry.getId());
         partData.setHasOriginalSequence(hasOriginalSequence);
-
-        // permissions
-        partData.setCanEdit(authorization.canWriteThoroughCheck(userId, entry));
-        partData.setPublicRead(permissionsController.isPubliclyVisible(entry));
+        Optional<String> sequenceString = sequenceDAO.getSequenceString(entry);
+        if (sequenceString.isPresent())
+            partData.setBasePairCount(sequenceString.get().trim().length());
+        else
+            partData.setBasePairCount(0);
 
         // create audit event if not owner
         // todo : remote access check
         if (userId != null && authorization.getOwner(entry) != null && !authorization.getOwner(entry).equalsIgnoreCase(userId)) {
-            try {
-                Audit audit = new Audit();
-                audit.setAction(AuditType.READ.getAbbrev());
-                audit.setEntry(entry);
-                audit.setUserId(userId);
-                audit.setLocalUser(true);
-                audit.setTime(new Date(System.currentTimeMillis()));
-                auditDAO.create(audit);
-            } catch (Exception e) {
-                Logger.error(e);
-            }
+            EntryHistory entryHistory = new EntryHistory(userId, entry.getId());
+            entryHistory.add();
         }
 
         // retrieve more information about linked entries if any (default only contains id)
@@ -447,10 +399,11 @@ public class EntryController {
                     continue;
 
                 link = ModelToInfoFactory.createTipView(linkedEntry);
-                Sequence sequence = sequenceDAO.getByEntry(linkedEntry);
-                if (sequence != null) {
-                    link.setBasePairCount(sequence.getSequence().length());
-                    link.setFeatureCount(sequence.getSequenceFeatures().size());
+                Optional<String> linkedSequenceString = sequenceDAO.getSequenceString(linkedEntry);
+
+                if (linkedSequenceString.isPresent()) {
+                    link.setBasePairCount(linkedSequenceString.get().trim().length());
+                    link.setFeatureCount(DAOFactory.getSequenceFeatureDAO().getFeatureCount(linkedEntry));
                 }
 
                 newLinks.add(link);
@@ -480,93 +433,5 @@ public class EntryController {
         }
 
         return partData;
-    }
-
-    public boolean addTraceSequence(String userId, long partId, File file, String uploadFileName) {
-        Entry entry = dao.get(partId);
-        if (entry == null)
-            return false;
-
-        authorization.expectRead(userId, entry);
-
-        FileInputStream inputStream;
-        try {
-            inputStream = new FileInputStream(file);
-        } catch (FileNotFoundException e) {
-            Logger.error(e);
-            return false;
-        }
-
-        if (uploadFileName.toLowerCase().endsWith(".zip")) {
-            try (ZipInputStream zis = new ZipInputStream(inputStream)) {
-                ZipEntry zipEntry;
-                while (true) {
-                    zipEntry = zis.getNextEntry();
-
-                    if (zipEntry != null) {
-                        if (!zipEntry.isDirectory() && !zipEntry.getName().startsWith("__MACOSX")) {
-                            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-                            int c;
-                            while ((c = zis.read()) != -1) {
-                                byteArrayOutputStream.write(c);
-                            }
-
-                            boolean parsed = parseTraceSequence(userId, entry, zipEntry.getName(),
-                                    byteArrayOutputStream.toByteArray());
-                            if (!parsed) {
-                                String errMsg = ("Could not parse \"" + zipEntry.getName()
-                                        + "\". Only Fasta, GenBank & ABI files are supported.");
-                                Logger.error(errMsg);
-                                return false;
-                            }
-                        }
-                    } else {
-                        break;
-                    }
-                }
-            } catch (IOException e) {
-                String errMsg = ("Could not parse zip file.");
-                Logger.error(errMsg);
-                return false;
-            }
-        } else {
-            try {
-                boolean parsed = parseTraceSequence(userId, entry, uploadFileName, IOUtils.toByteArray(inputStream));
-                if (!parsed) {
-                    String errMsg = ("Could not parse \"" + uploadFileName
-                            + "\". Only Fasta, GenBank & ABI files are supported.");
-                    Logger.error(errMsg);
-                    return false;
-                }
-            } catch (IOException e) {
-                Logger.error(e);
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    // uploads trace sequence file and builds or rebuilds alignment
-    private boolean parseTraceSequence(String userId, Entry entry, String fileName, byte[] bytes) {
-        DNASequence dnaSequence = sequenceAnalysisController.parse(bytes);
-        if (dnaSequence == null || dnaSequence.getSequence() == null) {
-            String errMsg = ("Could not parse \"" + fileName
-                    + "\". Only Fasta, GenBank & ABI files are supported.");
-            Logger.error(errMsg);
-            return false;
-        }
-
-        TraceSequence traceSequence = sequenceAnalysisController.uploadTraceSequence(
-                entry, fileName, userId, dnaSequence.getSequence().toLowerCase(), new ByteArrayInputStream(bytes));
-
-        if (traceSequence == null)
-            return false;
-
-        Sequence sequence = DAOFactory.getSequenceDAO().getByEntry(entry);
-        if (sequence == null)
-            return true;
-        sequenceAnalysisController.buildOrRebuildAlignment(traceSequence, sequence);
-        return true;
     }
 }

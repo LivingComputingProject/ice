@@ -1,29 +1,30 @@
 package org.jbei.ice.storage.hibernate.dao;
 
-import org.hibernate.Criteria;
+import org.apache.commons.lang3.StringUtils;
 import org.hibernate.HibernateException;
-import org.hibernate.Query;
-import org.hibernate.Session;
-import org.hibernate.criterion.Projections;
-import org.hibernate.criterion.Restrictions;
 import org.jbei.ice.lib.common.logging.Logger;
 import org.jbei.ice.lib.dto.entry.Visibility;
 import org.jbei.ice.lib.utils.SequenceUtils;
 import org.jbei.ice.lib.utils.UtilityException;
 import org.jbei.ice.storage.DAOException;
+import org.jbei.ice.storage.DAOFactory;
 import org.jbei.ice.storage.hibernate.HibernateRepository;
 import org.jbei.ice.storage.model.*;
 
+import javax.persistence.criteria.CriteriaQuery;
+import javax.persistence.criteria.Join;
+import javax.persistence.criteria.Root;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 
 /**
  * Manipulate {@link Sequence} and associated objects in the database.
  *
- * @author Hector Plahar, Timothy Ham, Zinovii Dmytriv
+ * @author Hector Plahar
  */
 public class SequenceDAO extends HibernateRepository<Sequence> {
     /**
@@ -31,16 +32,12 @@ public class SequenceDAO extends HibernateRepository<Sequence> {
      *
      * @param sequence sequence to save
      * @return Saved Sequence object
+     * @throws IllegalArgumentException if the sequence object is null or does not have a valid entry associated with it
      * @throws DAOException
      */
     public Sequence saveSequence(Sequence sequence) {
-        if (sequence == null) {
-            throw new DAOException("Failed to save null sequence!");
-        }
-
-        if (sequence.getEntry() == null) {
-            throw new DAOException("Failed to save sequence without entry!");
-        }
+        if (sequence == null || sequence.getEntry() == null)
+            throw new IllegalArgumentException("Cannot save null sequence or sequence without entry");
 
         Set<SequenceFeature> sequenceFeatureSet = null;
 
@@ -49,8 +46,11 @@ public class SequenceDAO extends HibernateRepository<Sequence> {
             sequenceFeatureSet = new HashSet<>(sequence.getSequenceFeatures());
             sequence.setSequenceFeatures(null);
         }
-        sequence = super.create(sequence);
 
+        // create sequence
+        sequence = create(sequence);
+
+        // separate out sequence features and uniquely create features
         if (sequenceFeatureSet != null) {
             for (SequenceFeature sequenceFeature : sequenceFeatureSet) {
                 Feature feature = sequenceFeature.getFeature();
@@ -59,15 +59,12 @@ public class SequenceDAO extends HibernateRepository<Sequence> {
                     throw new DAOException("SequenceFeature has no feature");
                 }
 
-                Feature existingFeature = null;
-                try {
-                    existingFeature = getFeatureBySequence(feature.getSequence());
-                } catch (DAOException de) {
-                    // ok to ignore
-                }
+                Feature existingFeature = getFeatureBySequence(feature.getSequence());
 
-                if (existingFeature == null) { // new feature -> save it
-                    existingFeature = saveFeature(feature); // tODO : this needs to be handled by another DAO
+                if (existingFeature == null) {
+                    // new feature -> save it
+                    FeatureDAO featureDAO = DAOFactory.getFeatureDAO();
+                    existingFeature = featureDAO.create(feature);
                 } else {
                     if (!sameFeatureUri(existingFeature, feature)) {
                         // same sequence feature but different uri
@@ -78,7 +75,7 @@ public class SequenceDAO extends HibernateRepository<Sequence> {
 
                 sequenceFeature.setFeature(existingFeature);
                 sequenceFeature.setSequence(sequence);
-                currentSession().saveOrUpdate(sequenceFeature);
+                DAOFactory.getSequenceFeatureDAO().create(sequenceFeature);
             }
         }
 
@@ -98,32 +95,39 @@ public class SequenceDAO extends HibernateRepository<Sequence> {
         return f2.getUri().equalsIgnoreCase(f1.getUri());
     }
 
+    /**
+     * Updates an existing feature with a new set of features
+     *
+     * @param sequence    existing feature to update
+     * @param newFeatures optional new set of features that need updating. If this is null, the features associated with
+     *                    the specified sequence is cleared
+     * @return updated sequence
+     * @throws IllegalArgumentException if sequence is null or does not have an associated entry
+     */
     public Sequence updateSequence(Sequence sequence, Set<SequenceFeature> newFeatures) {
-        if (sequence == null) {
-            throw new DAOException("Failed to update null sequence!");
+        if (sequence == null || sequence.getEntry() == null)
+            throw new IllegalArgumentException("Cannot update null sequence or sequence without valid entry");
+
+        // clear existing features
+        if (sequence.getSequenceFeatures() != null) {
+            for (SequenceFeature feature : sequence.getSequenceFeatures())
+                currentSession().delete(feature);
         }
 
-        if (sequence.getEntry() == null) {
-            throw new DAOException("Failed to update sequence without entry!");
-        }
-
-        // clear features
-        for (SequenceFeature feature : sequence.getSequenceFeatures())
-            currentSession().delete(feature);
         sequence.setSequenceFeatures(null);
         sequence = update(sequence);
 
-        // new features
+        // add new features
         if (newFeatures != null) {
             for (SequenceFeature sequenceFeature : newFeatures) {
                 Feature newFeature = sequenceFeature.getFeature();
                 Feature newFeatureExisting = getFeatureBySequence(newFeature.getSequence());
                 if (newFeatureExisting == null) {
-                    newFeatureExisting = saveFeature(newFeature);
+                    newFeatureExisting = DAOFactory.getFeatureDAO().create(newFeature);
                 }
                 sequenceFeature.setFeature(newFeatureExisting);
                 sequenceFeature.setSequence(sequence);
-                currentSession().saveOrUpdate(sequenceFeature);
+                DAOFactory.getSequenceFeatureDAO().create(sequenceFeature);
             }
         }
 
@@ -153,71 +157,62 @@ public class SequenceDAO extends HibernateRepository<Sequence> {
     }
 
     /**
-     * Save the given {@link Feature} object in the database.
-     *
-     * @param feature feature to save
-     * @return Saved Feature object.
-     */
-    public Feature saveFeature(Feature feature) {
-        if (feature == null) {
-            throw new DAOException("Cannot save null object");
-        }
-
-        Session session = currentSession();
-        try {
-            session.save(feature);
-        } catch (HibernateException e) {
-            Logger.error(e);
-            throw new DAOException("Exception saving feature", e);
-        }
-
-        return feature;
-    }
-
-    /**
      * Retrieve the {@link Sequence} object associated with the given {@link Entry} object.
      *
      * @param entry entry associated with sequence
      * @return Sequence object.
      */
     public Sequence getByEntry(Entry entry) {
-        Sequence sequence = null;
-
-        Session session = currentSession();
         try {
-            String queryString = "from " + Sequence.class.getName() + " as sequence where sequence.entry = :entry";
-            Query query = session.createQuery(queryString);
-            query.setEntity("entry", entry);
-            Object queryResult = query.uniqueResult();
-
-            if (queryResult != null) {
-                sequence = (Sequence) queryResult;
-            }
+            CriteriaQuery<Sequence> query = getBuilder().createQuery(Sequence.class);
+            Root<Sequence> from = query.from(Sequence.class);
+            query.where(getBuilder().equal(from.get("entry"), entry));
+            Optional<Sequence> sequence = currentSession().createQuery(query).uniqueResultOptional();
+            if (!sequence.isPresent())
+                return null;
+            return normalizeAnnotationLocations(sequence.get());
         } catch (HibernateException e) {
             Logger.error(e);
             throw new DAOException("Failed to retrieve sequence by entry: " + entry.getId(), e);
         }
-        normalizeAnnotationLocations(sequence);
-        return sequence;
+    }
+
+    public Optional<String> getSequenceString(Entry entry) {
+        try {
+            CriteriaQuery<String> query = getBuilder().createQuery(String.class);
+            Root<Sequence> from = query.from(Sequence.class);
+            query.select(from.get("sequence")).where(getBuilder().equal(from.get("entry"), entry));
+            return currentSession().createQuery(query).uniqueResultOptional();
+        } catch (HibernateException he) {
+            Logger.error(he);
+            throw new DAOException(he);
+        }
     }
 
     public boolean hasSequence(long entryId) {
-        Session session = currentSession();
         try {
-            Number itemCount = (Number) session.createCriteria(Sequence.class)
-                    .setProjection(Projections.countDistinct("id"))
-                    .add(Restrictions.eq("entry.id", entryId)).uniqueResult();
-            return itemCount.intValue() > 0;
-        } catch (HibernateException e) {
-            throw new DAOException("Failed to retrieve sequence by entry: " + entryId, e);
+            CriteriaQuery<Long> query = getBuilder().createQuery(Long.class);
+            Root<Sequence> from = query.from(Sequence.class);
+            Join<Sequence, Entry> entry = from.join("entry");
+            query.select(getBuilder().countDistinct(from.get("id"))).where(
+                    getBuilder().equal(entry.get("id"), entryId)).distinct(true);
+            return currentSession().createQuery(query).setMaxResults(1).uniqueResult() > 0;
+        } catch (HibernateException he) {
+            Logger.error(he);
+            throw new DAOException(he);
         }
     }
 
     public String getSequenceFilename(Entry entry) {
-        return (String) currentSession().createCriteria(Sequence.class)
-                .setProjection(Projections.property("fileName"))
-                .add(Restrictions.eq("entry", entry))
-                .uniqueResult();
+        try {
+            CriteriaQuery<String> query = getBuilder().createQuery(String.class);
+            Root<Sequence> from = query.from(Sequence.class);
+            query.select(from.get("fileName")).where(getBuilder().equal(from.get("entry"), entry));
+            return currentSession().createQuery(query).getSingleResult();
+        } catch (HibernateException he) {
+            Logger.error(he);
+            throw new DAOException(he);
+        }
     }
 
     /**
@@ -228,25 +223,24 @@ public class SequenceDAO extends HibernateRepository<Sequence> {
      * @throws DAOException
      */
     public boolean hasOriginalSequence(long entryId) {
-        Session session = currentSession();
         try {
-            Number itemCount = (Number) session.createCriteria(Sequence.class)
-                    .setProjection(Projections.countDistinct("id"))
-                    .add(Restrictions.eq("entry.id", entryId))
-                    .add(Restrictions.conjunction().add(
-                            Restrictions.ne("sequenceUser", "")).add(
-                            Restrictions.isNotNull("sequenceUser")))
-                    .uniqueResult();
-
-            return itemCount.intValue() > 0;
-        } catch (HibernateException e) {
-            throw new DAOException("Failed to retrieve sequence by entry: " + entryId, e);
+            CriteriaQuery<Long> query = getBuilder().createQuery(Long.class);
+            Root<Sequence> from = query.from(Sequence.class);
+            Join<Sequence, Entry> entry = from.join("entry");
+            query.select(getBuilder().countDistinct(from.get("id"))).where(
+                    getBuilder().equal(entry.get("id"), entryId),
+                    getBuilder().notEqual(from.get("sequenceUser"), ""),
+                    getBuilder().isNotNull(from.get("sequenceUser")));
+            return currentSession().createQuery(query).uniqueResult() > 0;
+        } catch (HibernateException he) {
+            Logger.error(he);
+            throw new DAOException(he);
         }
     }
 
     /**
-     * Enables retrieving sequences in the database without loading everything memory
-     * <p>
+     * Enables retrieving sequences in the database without loading everything in memory
+     * <p/>
      * Expected usage is
      * <code>
      * long count = getSequenceCount();
@@ -260,18 +254,13 @@ public class SequenceDAO extends HibernateRepository<Sequence> {
      * @return Sequence at the specified offset
      * @throws DAOException
      */
-    @SuppressWarnings("unchecked")
-    public Sequence getSequence(int offset) throws DAOException {
-        Session session = currentSession();
+    public Sequence getSequence(int offset) {
         try {
-            Criteria criteria = session.createCriteria(Sequence.class);
-
-            Criteria entryC = criteria.createCriteria("entry", "entry");
-            entryC.add(Restrictions.disjunction()
-                    .add(Restrictions.eq("visibility", Visibility.OK.getValue())));
-            criteria.setFirstResult(offset);
-            criteria.setMaxResults(1);
-            return (Sequence) criteria.uniqueResult();
+            CriteriaQuery<Sequence> query = getBuilder().createQuery(Sequence.class);
+            Root<Sequence> from = query.from(Sequence.class);
+            Join<Sequence, Entry> entry = from.join("entry");
+            query.where(getBuilder().equal(entry.get("visibility"), Visibility.OK.getValue()));
+            return currentSession().createQuery(query).setFirstResult(offset).setMaxResults(1).uniqueResult();
         } catch (HibernateException he) {
             Logger.error(he);
             throw new DAOException(he);
@@ -282,16 +271,13 @@ public class SequenceDAO extends HibernateRepository<Sequence> {
      * @return number of sequences available for all valid (visibility=9) entry object
      */
     public int getSequenceCount() {
-        Session session = currentSession();
         try {
-            Criteria criteria = session.createCriteria(Sequence.class);
-
-            Criteria entryC = criteria.createCriteria("entry", "entry");
-            entryC.add(Restrictions.disjunction()
-                    .add(Restrictions.eq("visibility", Visibility.OK.getValue())));
-            criteria.setProjection(Projections.count("id"));
-            Number number = (Number) criteria.uniqueResult();
-            return number.intValue();
+            CriteriaQuery<Long> query = getBuilder().createQuery(Long.class);
+            Root<Sequence> from = query.from(Sequence.class);
+            Join<Sequence, Entry> entry = from.join("entry");
+            query.select(getBuilder().countDistinct(from.get("id")));
+            query.where(getBuilder().equal(entry.get("visibility"), Visibility.OK.getValue()));
+            return currentSession().createQuery(query).uniqueResult().intValue();
         } catch (HibernateException he) {
             Logger.error(he);
             throw new DAOException(he);
@@ -307,40 +293,31 @@ public class SequenceDAO extends HibernateRepository<Sequence> {
      */
     private Feature getFeatureBySequence(String featureDnaSequence) {
         featureDnaSequence = featureDnaSequence.toLowerCase();
-        Feature result;
-        Session session = currentSession();
 
         try {
-            String queryString = "from " + Feature.class.getName() + " where hash = :hash";
-            Query query = session.createQuery(queryString);
-            query.setParameter("hash", SequenceUtils.calculateSequenceHash(featureDnaSequence));
+            String hash = SequenceUtils.calculateSequenceHash(featureDnaSequence);
+            CriteriaQuery<Feature> query = getBuilder().createQuery(Feature.class);
+            Root<Feature> from = query.from(Feature.class);
+            query.where(getBuilder().equal(from.get("hash"), hash));
 
-            Object queryResult = query.uniqueResult();
+            Optional<Feature> result = currentSession().createQuery(query).uniqueResultOptional();
+            if (result.isPresent())
+                return result.get();
 
-            if (queryResult != null) {
-                result = (Feature) queryResult;
-            } else {
-                String reverseComplement = SequenceUtils.reverseComplement(featureDnaSequence);
-                String sequenceHash = SequenceUtils.calculateSequenceHash(reverseComplement);
-                query.setParameter("hash", sequenceHash);
-                queryResult = query.uniqueResult();
-                if (queryResult != null) {
-                    result = (Feature) queryResult;
-                } else {
-                    result = null;
-                }
-            }
+            String reverseComplement = SequenceUtils.reverseComplement(featureDnaSequence);
+            String sequenceHash = SequenceUtils.calculateSequenceHash(reverseComplement);
+            query.getRestriction().getExpressions().clear();
+            query.where(getBuilder().equal(from.get("hash"), sequenceHash));
+            return currentSession().createQuery(query).uniqueResult();
         } catch (HibernateException | UtilityException e) {
             Logger.error(e);
             throw new DAOException("Failed to get Feature by sequence!", e);
         }
-
-        return result;
     }
 
     /**
      * Normalize {@link AnnotationLocation}s by fixing strangely defined annotationLocations.
-     * <p>
+     * <p/>
      * Fix locations that encompass the entire sequence, but defined strangely. This causes problems
      * elsewhere.
      */
@@ -348,6 +325,14 @@ public class SequenceDAO extends HibernateRepository<Sequence> {
         if (sequence == null) {
             return null;
         }
+
+        if (sequence.getSequenceFeatures() == null) {
+            return sequence;
+        }
+
+        if (StringUtils.isEmpty(sequence.getSequence()))
+            return sequence;
+
         int length = sequence.getSequence().length();
         boolean wholeSequence;
         for (SequenceFeature sequenceFeature : sequence.getSequenceFeatures()) {
@@ -361,8 +346,7 @@ public class SequenceDAO extends HibernateRepository<Sequence> {
             if (wholeSequence) {
                 sequenceFeature.setStrand(1);
                 sequenceFeature.getAnnotationLocations().clear();
-                sequenceFeature.getAnnotationLocations().add(
-                        new AnnotationLocation(1, length, sequenceFeature));
+                sequenceFeature.getAnnotationLocations().add(new AnnotationLocation(1, length, sequenceFeature));
             }
         }
         return sequence;

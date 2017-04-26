@@ -6,6 +6,7 @@ import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.service.ServiceRegistry;
 import org.jbei.ice.lib.common.logging.Logger;
+import org.jbei.ice.storage.model.FeatureCurationModel;
 
 /**
  * Helper class to Initialize Hibernate, and obtain new sessions.
@@ -39,7 +40,8 @@ public class HibernateUtil {
     }
 
     public static void beginTransaction() {
-        getSessionFactory().getCurrentSession().beginTransaction();
+        if (!getSessionFactory().getCurrentSession().getTransaction().isActive())
+            getSessionFactory().getCurrentSession().beginTransaction();
     }
 
     public static void commitTransaction() {
@@ -114,6 +116,11 @@ public class HibernateUtil {
                 configuration.addAnnotatedClass(org.jbei.ice.storage.model.ShotgunSequence.class);
                 configuration.addAnnotatedClass(org.jbei.ice.storage.model.Configuration.class);
                 configuration.addAnnotatedClass(org.jbei.ice.storage.model.ApiKey.class);
+                configuration.addAnnotatedClass(org.jbei.ice.storage.model.RemoteClientModel.class);
+                configuration.addAnnotatedClass(org.jbei.ice.storage.model.RemoteShareModel.class);
+                configuration.addAnnotatedClass(org.jbei.ice.storage.model.RemoteAccessModel.class);
+                configuration.addAnnotatedClass(org.jbei.ice.storage.model.ManuscriptModel.class);
+                configuration.addAnnotatedClass(FeatureCurationModel.class);
 
                 sessionFactory = configuration.buildSessionFactory(serviceRegistry);
             } catch (Throwable e) {

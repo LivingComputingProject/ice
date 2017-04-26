@@ -23,10 +23,6 @@ import java.util.Map;
 public class IceRestClient extends RestClient {
 
     private static IceRestClient INSTANCE = new IceRestClient();
-    //    protected final String API_KEY_TOKEN = "X-ICE-API-Token";               // token for validation
-    protected final String API_KEY_CLIENT_ID = "X-ICE-API-Token-Client";    // client id (also url)
-    protected final String WOR_API_KEY_TOKEN = "X-ICE-WOR-Token";           // web of registries api key
-
     private Client client;
 
     public static IceRestClient getInstance() {
@@ -35,16 +31,11 @@ public class IceRestClient extends RestClient {
 
     protected IceRestClient() {
         ClientConfig clientConfig = new ClientConfig();
-        clientConfig.register(IceAuthenticationFilter.class);
+        clientConfig.register(IceRequestFilter.class);
         clientConfig.register(PartDataJSONHandler.class);
         clientConfig.register(ArrayDataJSONHandler.class);
         clientConfig.register(MultiPartFeature.class);
         client = ClientBuilder.newClient(clientConfig);
-    }
-
-    public <T> T get(String url, String path, Class<T> clazz) {
-        WebTarget target = client.target("https://" + url).path(path);
-        return target.request(MediaType.APPLICATION_JSON_TYPE).buildGet().invoke(clazz);
     }
 
     @Override
@@ -58,15 +49,35 @@ public class IceRestClient extends RestClient {
         return target.request(MediaType.APPLICATION_JSON_TYPE).buildGet().invoke(clazz);
     }
 
-    public Object get(String url, String path) {
-        WebTarget target = client.target("https://" + url).path(path);
-        return target.request(MediaType.APPLICATION_JSON_TYPE).buildGet().invoke();
+    @Override
+    public <T> T post(String url, String resourcePath, Object object, Class<T> responseClass,
+                      Map<String, Object> queryParams) {
+        WebTarget target = client.target("https://" + url).path(resourcePath);
+        if (queryParams != null) {
+            for (Map.Entry<String, Object> entry : queryParams.entrySet()) {
+                target = target.queryParam(entry.getKey(), entry.getValue());
+            }
+        }
+
+        Invocation.Builder invocationBuilder = target.request(MediaType.APPLICATION_JSON_TYPE);
+        Response postResponse = invocationBuilder.post(Entity.entity(object, MediaType.APPLICATION_JSON_TYPE));
+        if (postResponse.hasEntity() && postResponse.getStatus() == Response.Status.OK.getStatusCode())
+            return postResponse.readEntity(responseClass);
+        return null;
     }
 
-    @Override
-    public <T> T post(String url, String resourcePath, Object object, Class<T> responseClass) {
+    // post to Wor
+    public <T> T postWor(String url, String resourcePath, Object object, Class<T> responseClass,
+                         Map<String, Object> queryParams, String token) {
         WebTarget target = client.target("https://" + url).path(resourcePath);
+        if (queryParams != null) {
+            for (Map.Entry<String, Object> entry : queryParams.entrySet()) {
+                target = target.queryParam(entry.getKey(), entry.getValue());
+            }
+        }
+
         Invocation.Builder invocationBuilder = target.request(MediaType.APPLICATION_JSON_TYPE);
+        setHeaders(invocationBuilder, token);
         Response postResponse = invocationBuilder.post(Entity.entity(object, MediaType.APPLICATION_JSON_TYPE));
         if (postResponse.hasEntity() && postResponse.getStatus() == Response.Status.OK.getStatusCode())
             return postResponse.readEntity(responseClass);
@@ -76,6 +87,29 @@ public class IceRestClient extends RestClient {
     public <T> T put(String url, String resourcePath, Object object, Class<T> responseClass) {
         WebTarget target = client.target("https://" + url).path(resourcePath);
         Invocation.Builder invocationBuilder = target.request(MediaType.APPLICATION_JSON_TYPE);
+        Response putResponse = invocationBuilder.put(Entity.entity(object, MediaType.APPLICATION_JSON_TYPE));
+        if (putResponse.getStatus() != Response.Status.OK.getStatusCode()) {
+            Logger.error("PUT call to " + url + "/" + resourcePath + " returned status of " + putResponse.getStatus());
+            return null;
+        }
+
+        if (responseClass != null && putResponse.hasEntity()
+                && putResponse.getStatus() == Response.Status.OK.getStatusCode())
+            return putResponse.readEntity(responseClass);
+        return null;
+    }
+
+    public <T> T putWor(String url, String resourcePath, Object object, Class<T> responseClass,
+                        Map<String, Object> queryParams, String worToken) {
+        WebTarget target = client.target("https://" + url).path(resourcePath);
+        if (queryParams != null) {
+            for (Map.Entry<String, Object> entry : queryParams.entrySet()) {
+                target = target.queryParam(entry.getKey(), entry.getValue());
+            }
+        }
+
+        Invocation.Builder invocationBuilder = target.request(MediaType.APPLICATION_JSON_TYPE);
+        setHeaders(invocationBuilder, worToken);
         Response putResponse = invocationBuilder.put(Entity.entity(object, MediaType.APPLICATION_JSON_TYPE));
         if (putResponse.getStatus() != Response.Status.OK.getStatusCode()) {
             Logger.error("PUT call to " + url + "/" + resourcePath + " returned status of " + putResponse.getStatus());
@@ -103,13 +137,18 @@ public class IceRestClient extends RestClient {
     }
 
     public Response postSequenceFile(String url, String recordId, EntryType entryType, String sequence) {
-        WebTarget target = client.target("https://" + url).path("/rest/file/sequence");
-        Invocation.Builder invocationBuilder = target.request(MediaType.APPLICATION_JSON_TYPE);
-        final FormDataMultiPart multiPart = new FormDataMultiPart();
-        multiPart.field("file", IOUtils.toInputStream(sequence), MediaType.TEXT_PLAIN_TYPE);
-        multiPart.field("entryRecordId", recordId);
-        multiPart.field("entryType", entryType.name());
-        return invocationBuilder.post(Entity.entity(multiPart, MediaType.MULTIPART_FORM_DATA_TYPE));
+        try {
+            WebTarget target = client.target("https://" + url).path("/rest/file/sequence");
+            Invocation.Builder invocationBuilder = target.request(MediaType.APPLICATION_JSON_TYPE);
+            final FormDataMultiPart multiPart = new FormDataMultiPart();
+            multiPart.field("file", IOUtils.toInputStream(sequence, "UTF-8"), MediaType.TEXT_PLAIN_TYPE);
+            multiPart.field("entryRecordId", recordId);
+            multiPart.field("entryType", entryType.name());
+            return invocationBuilder.post(Entity.entity(multiPart, MediaType.MULTIPART_FORM_DATA_TYPE));
+        } catch (Exception e) {
+            Logger.error(e);
+            return null;
+        }
     }
 
     // WOR
@@ -126,11 +165,11 @@ public class IceRestClient extends RestClient {
     }
 
     protected void setHeaders(Invocation.Builder invocationBuilder, String token) {
-        invocationBuilder.header(WOR_API_KEY_TOKEN, token);
+        invocationBuilder.header(Headers.WOR_API_KEY_TOKEN, token);
 
         String clientId = Utils.getConfigValue(ConfigurationKey.URI_PREFIX);
         if (!StringUtils.isEmpty(clientId)) {
-            invocationBuilder.header(API_KEY_CLIENT_ID, clientId);
+            invocationBuilder.header(Headers.API_KEY_CLIENT_ID, clientId);
         }
     }
 }

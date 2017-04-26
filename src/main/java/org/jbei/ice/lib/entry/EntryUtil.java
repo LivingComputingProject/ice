@@ -2,7 +2,6 @@ package org.jbei.ice.lib.entry;
 
 import org.apache.commons.lang3.StringUtils;
 import org.jbei.ice.lib.dto.ConfigurationKey;
-import org.jbei.ice.lib.dto.bulkupload.EntryField;
 import org.jbei.ice.lib.dto.entry.*;
 import org.jbei.ice.lib.shared.BioSafetyOption;
 import org.jbei.ice.lib.utils.Utils;
@@ -113,6 +112,12 @@ public class EntryUtil {
             case SELECTION_MARKERS:
                 return entry.getSelectionMarkersAsString();
 
+            case CREATOR:
+                return entry.getCreator();
+
+            case CREATOR_EMAIL:
+                return entry.getCreatorEmail();
+
             default:
                 return null;
         }
@@ -212,49 +217,38 @@ public class EntryUtil {
         if (type == null)
             type = EntryType.PART;
 
-        switch (type) {
-            case PLASMID:
-            case STRAIN:
-            case ARABIDOPSIS:
-                if (partData.getSelectionMarkers() == null || partData.getSelectionMarkers().isEmpty())
-                    invalidFields.add(EntryField.SELECTION_MARKERS);
+        if (StringUtils.isEmpty(partData.getName()))
+            invalidFields.add(EntryField.NAME);
 
-                // deliberately not breaking here to fall into part since all other part types extends from it
-            case PART:
-                if (StringUtils.isEmpty(partData.getName()))
-                    invalidFields.add(EntryField.NAME);
+        if (partData.getBioSafetyLevel() == null)
+            invalidFields.add(EntryField.BIO_SAFETY_LEVEL);
 
-                if (partData.getBioSafetyLevel() == null)
-                    invalidFields.add(EntryField.BIO_SAFETY_LEVEL);
+        if (StringUtils.isEmpty(partData.getStatus()))
+            invalidFields.add(EntryField.STATUS);
 
-                if (StringUtils.isEmpty(partData.getStatus()))
-                    invalidFields.add(EntryField.STATUS);
+        if (StringUtils.isEmpty(partData.getCreator()))
+            invalidFields.add(EntryField.CREATOR);
 
-                if (StringUtils.isEmpty(partData.getCreator()))
-                    invalidFields.add(EntryField.CREATOR);
+        if (StringUtils.isEmpty(partData.getCreatorEmail()))
+            invalidFields.add(EntryField.CREATOR_EMAIL);
 
-                if (StringUtils.isEmpty(partData.getCreatorEmail()))
-                    invalidFields.add(EntryField.CREATOR_EMAIL);
+        if (StringUtils.isEmpty(partData.getShortDescription()))
+            invalidFields.add(EntryField.SUMMARY);
 
-                if (StringUtils.isEmpty(partData.getShortDescription()))
-                    invalidFields.add(EntryField.SUMMARY);
-
-                break;
-        }
+        if ((type != EntryType.PART) && (partData.getSelectionMarkers() == null || partData.getSelectionMarkers().isEmpty()))
+            invalidFields.add(EntryField.SELECTION_MARKERS);
 
         return invalidFields;
     }
 
     public static PartData setPartDefaults(PartData partData) {
-        switch (partData.getType()) {
-            case PLASMID:
-                if (partData.getPlasmidData() == null) {
-                    PlasmidData plasmidData = new PlasmidData();
-                    plasmidData.setCircular(true);
-                    partData.setPlasmidData(plasmidData);
-                } else
-                    partData.getPlasmidData().setCircular(true);
-                break;
+        if (partData.getType() == EntryType.PLASMID) {
+            if (partData.getPlasmidData() == null) {
+                PlasmidData plasmidData = new PlasmidData();
+                plasmidData.setCircular(true);
+                partData.setPlasmidData(plasmidData);
+            } else
+                partData.getPlasmidData().setCircular(true);
         }
 
         return partData;

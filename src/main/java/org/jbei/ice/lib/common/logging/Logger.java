@@ -1,13 +1,14 @@
 package org.jbei.ice.lib.common.logging;
 
+import org.hibernate.HibernateException;
 import org.jbei.ice.lib.dto.ConfigurationKey;
-import org.jbei.ice.lib.utils.Emailer;
+import org.jbei.ice.lib.email.EmailFactory;
 import org.jbei.ice.lib.utils.Utils;
 import org.slf4j.LoggerFactory;
 
-import javax.mail.MessagingException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import org.jbei.ice.lib.utils.Emailer;
 
 /**
  * Logger for ICE.
@@ -34,6 +35,10 @@ public class Logger {
         LOGGER.error(e.getMessage(), e);
     }
 
+    public static boolean isDebugEnabled() {
+        return LOGGER.isDebugEnabled();
+    }
+
     public static void warn(String message) {
         LOGGER.warn(message);
     }
@@ -47,8 +52,7 @@ public class Logger {
     }
 
     private static void sendEmail(String message, Throwable e) {
-        if (e instanceof MessagingException) {
-            // if error is "Can't send email", there is no need to try to send email
+        if (e instanceof HibernateException) {
             return;
         }
 

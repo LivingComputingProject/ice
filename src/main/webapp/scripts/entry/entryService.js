@@ -9,6 +9,7 @@ angular.module('ice.entry.service', [])
         var allSelection = {};
         var canDelete = false;
         var selectedTypes = {};
+        var searchQuery = undefined;
         var userId = $cookieStore.get('userId');
 
         return {
@@ -93,7 +94,7 @@ angular.module('ice.entry.service', [])
                 var selected = [];
                 for (var k in selectedEntries) {
                     if (selectedEntries.hasOwnProperty(k) && selectedEntries[k]) {
-                        selected.push({id: k});
+                        selected.push({id: k, visible: selectedEntries[k].visible});
                     }
                 }
                 return selected;
@@ -111,11 +112,21 @@ angular.module('ice.entry.service', [])
                 var count = 0;
                 // selectedTypes is the type of entries selected
                 for (var k in selectedTypes) if (selectedTypes.hasOwnProperty(k)) ++count;
-                return !this.allSelected() && canEdit && selectedSearchResultsCount > 0 && count == 1;
+                return !this.allSelected() && canEdit && selectedSearchResultsCount > 0 && count == 1 && !this.canRestore();
             },
 
             canDelete: function () {
                 return !this.allSelected() && (($rootScope.user && $rootScope.user.isAdmin) || canDelete) && selectedSearchResultsCount > 0;
+            },
+
+            canRestore: function () {
+                if (allSelection.type && allSelection.type == 'ALL')
+                    return false;
+                return this.hasSelection() && this.getSelectedEntries()[0].visible == 'DELETED';
+            },
+
+            isAdmin: function () {
+                return $rootScope.user && $rootScope.user.isAdmin;
             },
 
             // determines if an entry has been selected
@@ -134,6 +145,14 @@ angular.module('ice.entry.service', [])
                 return allSelection.type == 'ALL';
             },
 
+            setSearch: function (query) {
+                searchQuery = query;
+            },
+
+            getSearch: function () {
+                return searchQuery;
+            },
+
             // resets all selected and send notifications
             reset: function () {
                 selectedEntries = {};
@@ -143,6 +162,7 @@ angular.module('ice.entry.service', [])
                 allSelection = {};
                 canEdit = false;
                 canDelete = false;
+                searchQuery = undefined;
                 $rootScope.$emit("EntrySelected", selectedSearchResultsCount);
             }
         }
@@ -440,28 +460,67 @@ angular.module('ice.entry.service', [])
                 entry.status = 'Complete';
                 entry.parameters = [];
                 return entry;
+            },
+
+            getMenuSubDetails: function () {
+                return [
+                    {
+                        url: 'scripts/entry/general-information.html',
+                        display: 'General Information',
+                        isPrivileged: false,
+                        icon: 'fa-exclamation-circle'
+                    },
+                    {
+                        id: 'sequences',
+                        url: 'scripts/entry/sequence-analysis.html',
+                        display: 'Sequence Analysis',
+                        isPrivileged: false,
+                        countName: 'sequenceCount',
+                        icon: 'fa-search-plus'
+                    },
+                    {
+                        id: 'comments',
+                        url: 'scripts/entry/comments.html',
+                        display: 'Comments',
+                        isPrivileged: false,
+                        countName: 'commentCount',
+                        icon: 'fa-comments-o'
+                    },
+                    {
+                        id: 'samples',
+                        url: 'scripts/entry/samples.html',
+                        display: 'Samples',
+                        isPrivileged: false,
+                        countName: 'sampleCount',
+                        icon: 'fa-flask'
+                    },
+                    {
+                        id: 'history',
+                        url: 'scripts/entry/history.html',
+                        display: 'History',
+                        isPrivileged: true,
+                        countName: 'historyCount',
+                        icon: 'fa-history'
+                    },
+                    {
+                        id: 'experiments',
+                        url: 'scripts/entry/experiments.html',
+                        display: 'Experimental Data',
+                        isPrivileged: false,
+                        countName: 'experimentalDataCount',
+                        icon: 'fa-database'
+                    }
+                ];
+            },
+
+            getEntryItems: function () {
+                return [
+                    {name: "Plasmid", type: "plasmid"},
+                    {name: "Strain", type: "strain"},
+                    {name: "Part", type: "part"},
+                    {name: "Arabidopsis Seed", type: "arabidopsis"}
+                ]
             }
-        }
-    })
-    .factory('CustomField', function ($resource, $cookieStore) {
-        return function () {
-
-            var sessionId = $cookieStore.get("sessionId");
-
-            return $resource('rest/custom-fields', {id: '@id'}, {
-                createNewCustomField: {
-                    method: 'POST',
-                    responseType: "json",
-                    headers: {'X-ICE-Authentication-SessionId': sessionId}
-                },
-
-                deleteCustomField: {
-                    method: 'DELETE',
-                    responseType: "json",
-                    url: "rest/custom-fields/:id",
-                    headers: {'X-ICE-Authentication-SessionId': sessionId}
-                }
-            });
         }
     })
 ;

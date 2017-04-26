@@ -21,6 +21,10 @@ angular.module('ice.collection.service', [])
                 selectedFolder = undefined;
                 $rootScope.$emit("CollectionSelected", collection);
             },
+            
+            getSelectedCollection: function() {
+                return selectedCollection;
+            },
 
             canEditSelectedFolder: function () {
                 if (selectedCollection === "personal")
@@ -87,6 +91,14 @@ angular.module('ice.collection.service', [])
                 display: 'Deleted',
                 icon: 'fa-trash-o',
                 iconOpen: 'fa-trash red',
+                alwaysVisible: false
+            },
+            {
+                name: 'transferred',
+                description: 'Transferred entries',
+                display: 'Transferred',
+                icon: 'fa-exchange',
+                iconOpen: 'fa-exchange',
                 alwaysVisible: false
             }
         ];

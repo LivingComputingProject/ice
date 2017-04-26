@@ -9,7 +9,7 @@ import org.jbei.ice.storage.model.Account;
 import org.jbei.ice.storage.model.Group;
 import org.junit.*;
 
-import java.util.Set;
+import java.util.List;
 
 /**
  * @author Hector Plahar
@@ -103,7 +103,7 @@ public class GroupControllerTest {
         g3.setLabel("myg3");
         Assert.assertNotNull(controller.createGroup(account2.getEmail(), g3));
 
-        Set<Group> groups = controller.getMatchingGroups(account.getEmail(), "myg", 10);
+        List<Group> groups = controller.getMatchingGroups(account.getEmail(), "myg", 10);
         Assert.assertNotNull(groups);
         Assert.assertEquals(1, groups.size());
     }
@@ -111,8 +111,8 @@ public class GroupControllerTest {
     @Test
     public void testRetrieveGroupMembers() throws Exception {
         Account a1 = AccountCreator.createTestAccount("testRetrieveGroupMembers1", false);
-        Account a2 = AccountCreator.createTestAccount("testRetrieveGroupMembers2", false);
-        Account a3 = AccountCreator.createTestAccount("testRetrieveGroupMembers3", false);
+        AccountCreator.createTestAccount("testRetrieveGroupMembers2", false);
+        AccountCreator.createTestAccount("testRetrieveGroupMembers3", false);
 
         UserGroup user = new UserGroup();
         user.setDescription("desc");
@@ -127,8 +127,8 @@ public class GroupControllerTest {
     @Test
     public void testSetGroupMembers() throws Exception {
         Account a1 = AccountCreator.createTestAccount("testSetGroupMembers1", false);
-        Account a2 = AccountCreator.createTestAccount("testSetGroupMembers2", false);
-        Account a3 = AccountCreator.createTestAccount("testSetGroupMembers3", false);
+        AccountCreator.createTestAccount("testSetGroupMembers2", false);
+        AccountCreator.createTestAccount("testSetGroupMembers3", false);
 
         UserGroup user = new UserGroup();
         user.setDescription("desc");

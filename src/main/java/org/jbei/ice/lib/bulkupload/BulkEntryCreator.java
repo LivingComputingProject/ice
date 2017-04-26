@@ -1,6 +1,5 @@
 package org.jbei.ice.lib.bulkupload;
 
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.jbei.ice.lib.access.PermissionException;
 import org.jbei.ice.lib.account.AccountController;
@@ -8,16 +7,16 @@ import org.jbei.ice.lib.common.logging.Logger;
 import org.jbei.ice.lib.dto.ConfigurationKey;
 import org.jbei.ice.lib.dto.DNASequence;
 import org.jbei.ice.lib.dto.bulkupload.EditMode;
-import org.jbei.ice.lib.dto.bulkupload.EntryField;
+import org.jbei.ice.lib.dto.entry.EntryField;
 import org.jbei.ice.lib.dto.entry.EntryType;
 import org.jbei.ice.lib.dto.entry.PartData;
 import org.jbei.ice.lib.dto.entry.Visibility;
 import org.jbei.ice.lib.dto.sample.PartSample;
+import org.jbei.ice.lib.email.EmailFactory;
 import org.jbei.ice.lib.entry.*;
 import org.jbei.ice.lib.entry.sample.SampleService;
 import org.jbei.ice.lib.entry.sequence.SequenceController;
 import org.jbei.ice.lib.search.blast.BlastPlus;
-import org.jbei.ice.lib.utils.Emailer;
 import org.jbei.ice.lib.utils.Utils;
 import org.jbei.ice.servlet.InfoToModelFactory;
 import org.jbei.ice.storage.DAOFactory;
@@ -29,7 +28,11 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import org.jbei.ice.lib.utils.Emailer;
 
 /**
  * Creates entries for bulk uploads
@@ -182,16 +185,24 @@ public class BulkEntryCreator {
         if (linkedEntry == null && !StringUtils.isEmpty(linkedPartData.getPartId())) {
             // try partId
             linkedEntry = entryDAO.getByPartNumber(linkedPartData.getPartId());
+            linkedPartData.setId(linkedEntry.getId());
         }
 
-        if (linkedEntry == null && (linkedEntry = InfoToModelFactory.infoToEntry(linkedPartData)) != null) {
-            linkedEntry.setVisibility(Visibility.DRAFT.getValue());
-            Account account = accountController.getByEmail(userId);
-            linkedEntry.setOwner(account.getFullName());
-            linkedEntry.setOwnerEmail(account.getEmail());
-            linkedEntry = entryDAO.create(linkedEntry);
-            entry.getLinkedEntries().add(linkedEntry);
-            entryDAO.update(linkedEntry);
+        if (linkedEntry == null) {
+            linkedEntry = InfoToModelFactory.infoToEntry(linkedPartData);
+            if (linkedEntry != null) {
+                linkedEntry.setVisibility(Visibility.DRAFT.getValue());
+                Account account = accountController.getByEmail(userId);
+                linkedEntry.setOwner(account.getFullName());
+                linkedEntry.setOwnerEmail(account.getEmail());
+                linkedEntry = entryDAO.create(linkedEntry);
+                entry.getLinkedEntries().add(linkedEntry);
+                entryDAO.update(linkedEntry);
+            }
+        } else {
+            // linking to existing
+            EntryLinks entryLinks = new EntryLinks(userId, Long.toString(entry.getId()));
+            entryLinks.addLink(linkedPartData, LinkType.CHILD);
         }
 
         // recursively update
@@ -223,7 +234,7 @@ public class BulkEntryCreator {
 
             // rejected by admin
             case IN_PROGRESS:
-                ArrayList<Long> entryList = dao.getEntryIds(upload);
+                List<Long> entryList = dao.getEntryIds(upload);
                 for (Number l : entryList) {
                     Entry entry = entryDAO.get(l.longValue());
                     if (entry == null || entry.getVisibility() != Visibility.PENDING.getValue())
@@ -284,6 +295,7 @@ public class BulkEntryCreator {
                 body += "Please login to the registry at:\n\n";
                 body += Utils.getConfigValue(ConfigurationKey.URI_PREFIX);
                 body += "\n\nand use the \"Pending Approval\" menu item to approve it\n\nThanks.";
+                //EmailFactory.getEmail().send(email, subject, body);
                 Emailer.send(email, subject, body);
             }
             return processedBulkUpload;
@@ -507,7 +519,7 @@ public class BulkEntryCreator {
                 if (linked.getId() != 0) {
                     Entry linkedEntry = entryDAO.get(linked.getId());
                     if (linkedEntry != null && entryAuthorization.canWriteThoroughCheck(userId, entry)) {
-                        EntryLinks links = new EntryLinks(userId, entry.getId());
+                        EntryLinks links = new EntryLinks(userId, Long.toString(entry.getId()));
                         links.addLink(linked, LinkType.CHILD);
                     }
                 }
@@ -540,7 +552,7 @@ public class BulkEntryCreator {
             if (partSample == null)
                 continue;
 
-            sampleService.createSample(userId, entry.getId(), partSample, null);
+            sampleService.createSample(userId, Long.toString(entry.getId()), partSample, null);
         }
 
         return true;
@@ -551,7 +563,7 @@ public class BulkEntryCreator {
         try {
             String sequenceName = data.getSequenceFileName();
             if (!StringUtils.isBlank(sequenceName)) {
-                String sequenceString = IOUtils.toString(files.get(sequenceName));
+                String sequenceString = Utils.getString(files.get(sequenceName));
                 DNASequence dnaSequence = SequenceController.parse(sequenceString);
 
                 if (dnaSequence == null || dnaSequence.getSequence().equals("")) {
@@ -577,7 +589,7 @@ public class BulkEntryCreator {
                 InputStream attachmentStream = files.get(attachmentName);
 
                 // clear
-                ArrayList<Attachment> attachments = DAOFactory.getAttachmentDAO().getByEntry(entry);
+                List<Attachment> attachments = DAOFactory.getAttachmentDAO().getByEntry(entry);
                 if (attachments != null && !attachments.isEmpty()) {
                     for (Attachment attachment : attachments) {
                         String dataDir = Utils.getConfigValue(ConfigurationKey.DATA_DIRECTORY);

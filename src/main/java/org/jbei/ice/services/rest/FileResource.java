@@ -1,11 +1,10 @@
 package org.jbei.ice.services.rest;
 
+import com.google.common.io.ByteStreams;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.glassfish.jersey.media.multipart.FormDataParam;
-import org.jbei.ice.lib.account.UserSessions;
 import org.jbei.ice.lib.bulkupload.FileBulkUpload;
 import org.jbei.ice.lib.common.logging.Logger;
 import org.jbei.ice.lib.config.ConfigurationController;
@@ -14,19 +13,22 @@ import org.jbei.ice.lib.dto.Setting;
 import org.jbei.ice.lib.dto.entry.AttachmentInfo;
 import org.jbei.ice.lib.dto.entry.EntryType;
 import org.jbei.ice.lib.dto.entry.SequenceInfo;
+import org.jbei.ice.lib.entry.EntriesAsCSV;
 import org.jbei.ice.lib.entry.EntrySelection;
 import org.jbei.ice.lib.entry.attachment.AttachmentController;
 import org.jbei.ice.lib.entry.sequence.ByteArrayWrapper;
+import org.jbei.ice.lib.entry.sequence.PartSequence;
 import org.jbei.ice.lib.entry.sequence.SequenceAnalysisController;
 import org.jbei.ice.lib.entry.sequence.SequenceController;
 import org.jbei.ice.lib.entry.sequence.composers.pigeon.PigeonSBOLv;
 import org.jbei.ice.lib.net.RemoteEntries;
-import org.jbei.ice.lib.utils.EntriesAsCSV;
+import org.jbei.ice.lib.net.RemoteSequence;
 import org.jbei.ice.lib.utils.Utils;
 import org.jbei.ice.storage.DAOFactory;
 import org.jbei.ice.storage.hibernate.dao.ShotgunSequenceDAO;
 import org.jbei.ice.storage.model.Entry;
 import org.jbei.ice.storage.model.Sequence;
+import org.jbei.ice.storage.model.ShotgunSequence;
 import org.jbei.ice.storage.model.TraceSequence;
 
 import javax.ws.rs.*;
@@ -36,9 +38,11 @@ import javax.ws.rs.core.StreamingOutput;
 import java.io.*;
 import java.net.URI;
 import java.nio.file.Paths;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.List;
 
 /**
+ * Resource for accessing files both locally and remotely
+ *
  * @author Hector Plahar
  */
 @Path("/file")
@@ -65,8 +69,7 @@ public class FileResource extends RestResource {
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     @Produces(MediaType.APPLICATION_JSON)
     public Response post(@FormDataParam("file") InputStream fileInputStream,
-                         @FormDataParam("file") FormDataContentDisposition contentDispositionHeader,
-                         @HeaderParam("X-ICE-Authentication-SessionId") String sessionId) {
+                         @FormDataParam("file") FormDataContentDisposition contentDispositionHeader) {
         try {
             final String fileName = contentDispositionHeader.getFileName();
             final String fileId = Utils.generateUUID();
@@ -84,36 +87,28 @@ public class FileResource extends RestResource {
         }
     }
 
-    protected Response addHeaders(Response.ResponseBuilder response, String fileName) {
-        response.header("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
-        int dotIndex = fileName.lastIndexOf('.') + 1;
-        if (dotIndex == 0)
-            return response.build();
-
-        String mimeType = ExtensionToMimeType.getMimeType(fileName.substring(dotIndex));
-        response.header("Content-Type", mimeType + "; name=\"" + fileName + "\"");
-        return response.build();
-    }
-
     /**
      * Retrieves a temp file by fileId
      */
     @GET
     @Path("tmp/{fileId}")
-    public Response getTmpFile(@PathParam("fileId") final String fileId) {
+    public Response getTmpFile(@PathParam("fileId") final String fileId,
+                               @QueryParam("filename") String fileName) {
         final File tmpFile = Paths.get(Utils.getConfigValue(ConfigurationKey.TEMPORARY_DIRECTORY),
                 fileId).toFile();
         if (tmpFile == null || !tmpFile.exists()) {
             return super.respond(Response.Status.NOT_FOUND);
         }
-        return addHeaders(Response.ok(tmpFile), tmpFile.getName());
+        if (StringUtils.isEmpty(fileName))
+            fileName = tmpFile.getName();
+
+        return addHeaders(Response.ok(tmpFile), fileName);
     }
 
     @GET
     @Path("attachment/{fileId}")
     public Response getAttachment(@PathParam("fileId") String fileId,
-                                  @QueryParam("sid") String sid,
-                                  @HeaderParam("X-ICE-Authentication-SessionId") String sessionId) {
+                                  @QueryParam("sid") String sid) {
         if (StringUtils.isEmpty(sessionId))
             sessionId = sid;
 
@@ -131,8 +126,7 @@ public class FileResource extends RestResource {
     @Path("remote/{id}/attachment/{fileId}")
     public Response getRemoteAttachment(@PathParam("id") long partnerId,
                                         @PathParam("fileId") String fileId,
-                                        @QueryParam("sid") String sid,
-                                        @HeaderParam("X-ICE-Authentication-SessionId") String sessionId) {
+                                        @QueryParam("sid") String sid) {
         String userId = getUserId(sessionId);
         RemoteEntries entries = new RemoteEntries();
         File file = entries.getPublicAttachment(userId, partnerId, fileId);
@@ -154,14 +148,11 @@ public class FileResource extends RestResource {
             linked = null;
         }
 
-        final StreamingOutput stream = new StreamingOutput() {
-            @Override
-            public void write(final OutputStream output) throws IOException, WebApplicationException {
-                byte[] template = FileBulkUpload.getCSVTemplateBytes(entryAddType, linked,
-                        "existing".equalsIgnoreCase(linkedType));
-                ByteArrayInputStream stream = new ByteArrayInputStream(template);
-                IOUtils.copy(stream, output);
-            }
+        final StreamingOutput stream = output -> {
+            byte[] template = FileBulkUpload.getCSVTemplateBytes(entryAddType, linked,
+                    "existing".equalsIgnoreCase(linkedType));
+            ByteArrayInputStream input = new ByteArrayInputStream(template);
+            ByteStreams.copy(input, output);
         };
 
         String filename = type.toLowerCase();
@@ -177,21 +168,23 @@ public class FileResource extends RestResource {
     public Response downloadSequence(
             @PathParam("partId") final long partId,
             @PathParam("type") final String downloadType,
-            @QueryParam("sid") String sid,
-            @HeaderParam("X-ICE-Authentication-SessionId") String sessionId) {
+            @DefaultValue("-1") @QueryParam("remoteId") long remoteId,
+            @QueryParam("sid") String sid) {
         if (StringUtils.isEmpty(sessionId))
             sessionId = sid;
 
         final String userId = getUserId(sessionId);
-        final ByteArrayWrapper wrapper = sequenceController.getSequenceFile(userId, partId, downloadType);
+        final ByteArrayWrapper wrapper;
+        if (remoteId != -1) {
+            RemoteSequence sequence = new RemoteSequence(remoteId, partId);
+            wrapper = sequence.get(downloadType);
+        } else {
+            wrapper = sequenceController.getSequenceFile(userId, partId, downloadType);
+        }
 
-        StreamingOutput stream = new StreamingOutput() {
-            @Override
-            public void write(final OutputStream output) throws IOException,
-                    WebApplicationException {
-                final ByteArrayInputStream stream = new ByteArrayInputStream(wrapper.getBytes());
-                IOUtils.copy(stream, output);
-            }
+        StreamingOutput stream = output -> {
+            final ByteArrayInputStream input = new ByteArrayInputStream(wrapper.getBytes());
+            ByteStreams.copy(input, output);
         };
 
         return addHeaders(Response.ok(stream), wrapper.getName());
@@ -200,8 +193,7 @@ public class FileResource extends RestResource {
     @GET
     @Path("trace/{fileId}")
     public Response getTraceSequenceFile(@PathParam("fileId") String fileId,
-                                         @QueryParam("sid") String sid,
-                                         @HeaderParam("X-ICE-Authentication-SessionId") String sessionId) {
+                                         @QueryParam("sid") String sid) {
         final SequenceAnalysisController sequenceAnalysisController = new SequenceAnalysisController();
         final TraceSequence traceSequence = sequenceAnalysisController.getTraceSequenceByFileId(fileId);
         if (traceSequence != null) {
@@ -214,13 +206,13 @@ public class FileResource extends RestResource {
     @GET
     @Path("shotgunsequence/{fileId}")
     public Response getShotgunSequenceFile(@PathParam("fileId") String fileId,
-                                           @QueryParam("sid") String sid,
-                                           @HeaderParam("X-ICE-Authentication-SessionId") String sessionId) {
+                                           @QueryParam("sid") String sid) {
         ShotgunSequenceDAO dao = DAOFactory.getShotgunSequenceDAO();
+        ShotgunSequence shotgunSequence = dao.getByFileId(fileId);
 
         try {
             final File file = dao.getFile(fileId);
-            return addHeaders(Response.ok(file), "sequence-" + ThreadLocalRandom.current().nextInt(10000, 100001) + ".ss.zip");
+            return addHeaders(Response.ok(file), shotgunSequence.getFilename());
         } catch (Exception e) {
             Logger.error(e);
             return Response.serverError().build();
@@ -230,8 +222,7 @@ public class FileResource extends RestResource {
     @GET
     @Produces("image/png")
     @Path("sbolVisual/{rid}")
-    public Response getSBOLVisual(@PathParam("rid") String recordId,
-                                  @HeaderParam("X-ICE-Authentication-SessionId") String sessionId) {
+    public Response getSBOLVisual(@PathParam("rid") String recordId) {
         final String tmpDir = Utils.getConfigValue(ConfigurationKey.TEMPORARY_DIRECTORY);
         final Entry entry = DAOFactory.getEntryDAO().getByRecordId(recordId);
         final Sequence sequence = entry.getSequence();
@@ -245,8 +236,8 @@ public class FileResource extends RestResource {
         final URI uri = PigeonSBOLv.generatePigeonVisual(sequence);
         if (uri != null) {
             try (final InputStream in = uri.toURL().openStream();
-                 final OutputStream out = new FileOutputStream(png);) {
-                IOUtils.copy(in, out);
+                 final OutputStream out = new FileOutputStream(png)) {
+                ByteStreams.copy(in, out);
             } catch (IOException e) {
                 Logger.error(e);
                 return respond(false);
@@ -267,25 +258,34 @@ public class FileResource extends RestResource {
     public Response uploadSequence(@FormDataParam("file") InputStream fileInputStream,
                                    @FormDataParam("entryRecordId") String recordId,
                                    @FormDataParam("entryType") String entryType,
-                                   @FormDataParam("file") FormDataContentDisposition contentDispositionHeader,
-                                   @HeaderParam("X-ICE-Authentication-SessionId") String sessionId) {
+                                   @FormDataParam("file") FormDataContentDisposition contentDispositionHeader) {
         try {
             if (entryType == null) {
-                return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
+                entryType = "PART";
             }
 
             final String fileName = contentDispositionHeader.getFileName();
-            final String userId = UserSessions.getUserIdBySession(sessionId);
-            final String sequence = IOUtils.toString(fileInputStream);
-            final SequenceInfo sequenceInfo = sequenceController.parseSequence(userId, recordId,
-                    entryType, sequence, fileName);
-            if (sequenceInfo == null) {
-                return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
+            String userId = getUserId();
+
+            PartSequence partSequence;
+            if (StringUtils.isEmpty(recordId)) {
+                EntryType type = EntryType.nameToType(entryType);
+                if (type == null)
+                    throw new WebApplicationException("Invalid entry type: " + entryType, Response.Status.BAD_REQUEST);
+                partSequence = new PartSequence(userId, type);
+            } else {
+                partSequence = new PartSequence(userId, recordId);
             }
-            return Response.status(Response.Status.OK).entity(sequenceInfo).build();
-        } catch (final Exception e) {
+
+            SequenceInfo info = partSequence.parseSequenceFile(fileInputStream, fileName);
+            if (info == null)
+                throw new WebApplicationException(Response.serverError().build());
+            return Response.status(Response.Status.OK).entity(info).build();
+        } catch (Exception e) {
             Logger.error(e);
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
+            ErrorResponse response = new ErrorResponse();
+            response.setMessage(e.getMessage());
+            throw new WebApplicationException(Response.serverError().entity(response).build());
         }
     }
 
@@ -298,9 +298,10 @@ public class FileResource extends RestResource {
     @Path("csv")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response downloadCSV(EntrySelection selection) {
-        String userId = super.getUserId();
-        EntriesAsCSV entriesAsCSV = new EntriesAsCSV();
+    public Response downloadCSV(@QueryParam("sequenceFormats") final List<String> sequenceFormats,
+                                EntrySelection selection) {
+        String userId = super.requireUserId();
+        EntriesAsCSV entriesAsCSV = new EntriesAsCSV(sequenceFormats.toArray(new String[sequenceFormats.size()]));
         boolean success = entriesAsCSV.setSelectedEntries(userId, selection);
         if (!success)
             return super.respond(false);

@@ -6,22 +6,21 @@ import org.jbei.ice.lib.dto.DNASequence;
 import org.jbei.ice.lib.parsers.ABIParser;
 import org.jbei.ice.lib.parsers.GeneralParser;
 import org.jbei.ice.lib.parsers.InvalidFormatParserException;
-import org.jbei.ice.lib.parsers.bl2seq.Bl2SeqException;
-import org.jbei.ice.lib.parsers.bl2seq.Bl2SeqParser;
 import org.jbei.ice.lib.parsers.bl2seq.Bl2SeqResult;
 import org.jbei.ice.lib.search.blast.BlastException;
 import org.jbei.ice.lib.search.blast.BlastPlus;
-import org.jbei.ice.lib.search.blast.ProgramTookTooLongException;
 import org.jbei.ice.lib.utils.Utils;
 import org.jbei.ice.storage.DAOFactory;
+import org.jbei.ice.storage.hibernate.dao.ShotgunSequenceDAO;
 import org.jbei.ice.storage.hibernate.dao.TraceSequenceDAO;
 import org.jbei.ice.storage.model.*;
 
 import java.io.File;
-import java.io.InputStream;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * ABI to manipulate DNA sequence trace analysis
@@ -31,61 +30,14 @@ import java.util.List;
 public class SequenceAnalysisController {
 
     private final TraceSequenceDAO traceDao;
+    private final ShotgunSequenceDAO shotgunDao;
 
     public static final String TRACES_DIR_NAME = "traces";
+    public static final String SHOTGUN_DIR_NAME = "shotgunsequences";
 
     public SequenceAnalysisController() {
         traceDao = DAOFactory.getTraceSequenceDAO();
-    }
-
-    /**
-     * Create a new {@link TraceSequence} record and associated with the {@link Entry} entry.
-     * <p>
-     * Creates a database record and write the inputStream to disk.
-     *
-     * @param entry
-     * @param filename
-     * @param depositor
-     * @param sequence
-     * @param uuid
-     * @param date
-     * @param inputStream
-     * @return Saved traceSequence
-     */
-    public TraceSequence importTraceSequence(Entry entry, String filename, String depositor, String sequence,
-                                             String uuid, Date date, InputStream inputStream) {
-        if (entry == null) {
-            throw new IllegalArgumentException("Failed to save trace sequence with null entry!");
-        }
-
-        if (filename == null || filename.isEmpty()) {
-            throw new IllegalArgumentException("Failed to save trace sequence without filename!");
-        }
-
-        if (sequence == null || sequence.isEmpty()) {
-            throw new IllegalArgumentException("Failed to save trace sequence without sequence!");
-        }
-
-        TraceSequence traceSequence = new TraceSequence(entry, uuid, filename, depositor, sequence, date);
-        File tracesDir = Paths.get(Utils.getConfigValue(ConfigurationKey.DATA_DIRECTORY), TRACES_DIR_NAME).toFile();
-        return traceDao.create(tracesDir, traceSequence, inputStream);
-    }
-
-    /**
-     * Create a new {@link TraceSequence} record and associated with the {@link Entry} entry.
-     * <p>
-     * Unlike importTraceSequence this method auto generates uuid and timestamp.
-     *
-     * @param entry       entry information
-     * @param filename    name of the file uploaded by the user
-     * @param depositor   email user depositing the information
-     * @param sequence    sequence string
-     * @param inputStream input stream for uploaded file
-     * @return Saved traceSequence
-     */
-    public TraceSequence uploadTraceSequence(Entry entry, String filename, String depositor,
-                                             String sequence, InputStream inputStream) {
-        return importTraceSequence(entry, filename, depositor, sequence, Utils.generateUUID(), new Date(), inputStream);
+        shotgunDao = DAOFactory.getShotgunSequenceDAO();
     }
 
     /**
@@ -97,8 +49,16 @@ public class SequenceAnalysisController {
         if (traceSequence == null)
             return;
 
-        File tracesDir = Paths.get(Utils.getConfigValue(ConfigurationKey.DATA_DIRECTORY), TRACES_DIR_NAME).toFile();
+        Path tracesDir = Paths.get(Utils.getConfigValue(ConfigurationKey.DATA_DIRECTORY), TRACES_DIR_NAME);
         traceDao.delete(tracesDir, traceSequence);
+    }
+
+    public void removeShotgunSequence(ShotgunSequence shotgunSequence) {
+        if (shotgunSequence == null)
+            return;
+
+        Path shotgunDir = Paths.get(Utils.getConfigValue(ConfigurationKey.DATA_DIRECTORY), SHOTGUN_DIR_NAME);
+        shotgunDao.delete(shotgunDir, shotgunSequence);
     }
 
     /**
@@ -141,7 +101,10 @@ public class SequenceAnalysisController {
     }
 
     public TraceSequence getTraceSequenceByFileId(String fileId) {
-        return traceDao.getByFileId(fileId);
+        Optional<TraceSequence> result = traceDao.getByFileId(fileId);
+        if (result.isPresent())
+            return result.get();
+        return null;
     }
 
     /**
@@ -157,7 +120,6 @@ public class SequenceAnalysisController {
 
         // Trying to parse as Fasta, Genbank, etc
         DNASequence dnaSequence = GeneralParser.getInstance().parse(bytes);
-
         if (dnaSequence == null) {
             // Trying to parse as ABI
 
@@ -206,26 +168,14 @@ public class SequenceAnalysisController {
         String entrySequenceString = sequence.getSequence();
 
         int entrySequenceLength = entrySequenceString.length();
-        boolean isCircular = (sequence.getEntry() instanceof Plasmid) && ((Plasmid) sequence.getEntry()).getCircular();
+        boolean isCircular = (sequence.getEntry().getRecordType().equalsIgnoreCase("plasmid")) && ((Plasmid) sequence.getEntry()).getCircular();
 
         if (isCircular) {
             entrySequenceString += entrySequenceString;
         }
 
-        String bl2seqOutput;
         try {
-            bl2seqOutput = BlastPlus.runBlast2Seq(entrySequenceString, traceSequenceString);
-        } catch (BlastException | ProgramTookTooLongException e) {
-            Logger.error(e);
-            return;
-        }
-
-        if (bl2seqOutput == null || bl2seqOutput.isEmpty()) {
-            return;
-        }
-
-        try {
-            List<Bl2SeqResult> bl2seqAlignmentResults = Bl2SeqParser.parse(bl2seqOutput);
+            List<Bl2SeqResult> bl2seqAlignmentResults = BlastPlus.runBlast2Seq(entrySequenceString, traceSequenceString);
 
             if (bl2seqAlignmentResults.size() > 0) {
                 int maxAlignedSequenceLength = -1;
@@ -293,7 +243,7 @@ public class SequenceAnalysisController {
                     traceDao.save(traceSequence);
                 }
             }
-        } catch (Bl2SeqException e) {
+        } catch (BlastException e) {
             Logger.error(e);
         }
     }
@@ -301,11 +251,12 @@ public class SequenceAnalysisController {
     /**
      * Calculate sequence alignments between the sequence associated with an {@link Entry} entry
      * with all the {@link TraceSequence}s associated with that entry.
-     * <p>
+     * <p/>
      * Calls buildOrReplaceAlignment on each TraceSequence.
      *
      * @param entry entry object
      */
+
     public void rebuildAllAlignments(Entry entry) {
         if (entry == null)
             return;

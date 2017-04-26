@@ -4,11 +4,13 @@ import org.jbei.ice.lib.common.logging.Logger;
 import org.jbei.ice.lib.dto.entry.EntryType;
 import org.jbei.ice.lib.dto.entry.PartData;
 import org.jbei.ice.storage.DAOFactory;
-import org.jbei.ice.storage.hibernate.dao.EntryDAO;
+import org.jbei.ice.storage.hibernate.dao.SequenceDAO;
+import org.jbei.ice.storage.hibernate.dao.SequenceFeatureDAO;
 import org.jbei.ice.storage.model.Entry;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Represents a main part and the hierarchical links that it is involved in.
@@ -17,19 +19,21 @@ import java.util.List;
  *
  * @author Hector Plahar
  */
-public class EntryLinks {
+public class EntryLinks extends HasEntry {
 
-    private final EntryDAO entryDAO;
+    private final SequenceDAO sequenceDAO;
+    private final SequenceFeatureDAO sequenceFeatureDAO;
     private final Entry entry;
     private final EntryAuthorization entryAuthorization;
     private final String userId;
 
-    public EntryLinks(String userId, long partId) {
-        this.entryDAO = DAOFactory.getEntryDAO();
-        this.entry = this.entryDAO.get(partId);
+    public EntryLinks(String userId, String partId) {
+        this.entry = super.getEntry(partId);
         if (this.entry == null)
             throw new IllegalArgumentException("Could not retrieve part with id " + partId);
         this.userId = userId;
+        this.sequenceDAO = DAOFactory.getSequenceDAO();
+        this.sequenceFeatureDAO = DAOFactory.getSequenceFeatureDAO();
         this.entryAuthorization = new EntryAuthorization();
         this.entryAuthorization.expectRead(userId, this.entry);
     }
@@ -51,6 +55,7 @@ public class EntryLinks {
         long linkId = partData.getId();
         Entry linkedEntry = this.entryDAO.get(linkId);
         if (linkedEntry == null) {
+            // todo : create a new entry
             Logger.error("Could not retrieve entry for linking: " + linkId);
             return false;
         }
@@ -58,7 +63,8 @@ public class EntryLinks {
         if (linkedEntry.getId() == this.entry.getId())
             throw new IllegalArgumentException("Cannot link and entry to itself");
 
-        entryAuthorization.expectWrite(userId, linkedEntry);
+        // should have write permissions on the main entry but only read on the entry being linked
+        entryAuthorization.expectRead(userId, linkedEntry);
         entryAuthorization.expectWrite(userId, entry);
 
         // add as parent
@@ -166,5 +172,51 @@ public class EntryLinks {
             parentData.add(parent.toDataTransferObject());
         }
         return parentData;
+    }
+
+    /**
+     * Retrieves entry links that are parents or children depending on specified type
+     *
+     * @param type specified type of links to return
+     * @return list of links that match specified type. These are filtered based on user permissions
+     */
+    public List<PartData> get(LinkType type) {
+        List<Entry> entries;
+        if (type == LinkType.CHILD) {
+            entries = new ArrayList<>(this.entry.getLinkedEntries());
+        } else {
+            entries = this.entryDAO.getParents(this.entry.getId());
+        }
+
+        // get sequence and other summary information
+        List<PartData> results = new ArrayList<>(entries.size());
+        for (Entry entry : entries) {
+            if (!this.entryAuthorization.canRead(this.userId, entry))
+                continue;
+
+            PartData partData = new PartData(EntryType.nameToType(entry.getRecordType()));
+            partData.setId(entry.getId());
+            partData.setName(entry.getName());
+            partData.setPartId(entry.getPartNumber());
+            partData.setShortDescription(entry.getShortDescription());
+
+            boolean hasSequence = sequenceDAO.hasSequence(entry.getId());
+            partData.setHasSequence(hasSequence);
+            boolean hasOriginalSequence = sequenceDAO.hasOriginalSequence(entry.getId());
+            partData.setHasOriginalSequence(hasOriginalSequence);
+            Optional<String> sequenceString = sequenceDAO.getSequenceString(entry);
+            if (sequenceString.isPresent()) {
+                String sequence = sequenceString.get();
+                int featureCount = sequenceFeatureDAO.getFeatureCount(entry);
+                partData.setBasePairCount(sequence.trim().length());
+                partData.setFeatureCount(featureCount);
+            } else {
+                partData.setBasePairCount(0);
+            }
+
+            results.add(partData);
+        }
+
+        return results;
     }
 }

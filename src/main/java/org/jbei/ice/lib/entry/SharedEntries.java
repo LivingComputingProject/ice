@@ -32,7 +32,7 @@ public class SharedEntries {
         this.entryDAO = DAOFactory.getEntryDAO();
     }
 
-    public long getNumberofEntries(String filter) {
+    public long getNumberOfEntries(String filter) {
         GroupController groupController = new GroupController();
         Group publicGroup = groupController.createOrRetrievePublicGroup();
         Set<Group> accountGroups = account.getGroups();
@@ -50,7 +50,6 @@ public class SharedEntries {
         ArrayList<PartData> data = new ArrayList<>();
         for (Entry entry : entries) {
             PartData info = ModelToInfoFactory.createTableViewData(account.getEmail(), entry, false);
-            info.setViewCount(DAOFactory.getAuditDAO().getHistoryCount(entry));
             data.add(info);
         }
         return data;

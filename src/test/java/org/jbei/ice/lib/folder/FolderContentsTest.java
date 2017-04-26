@@ -2,9 +2,12 @@ package org.jbei.ice.lib.folder;
 
 import org.jbei.ice.lib.AccountCreator;
 import org.jbei.ice.lib.TestEntryCreator;
+import org.jbei.ice.lib.dto.common.PageParameters;
 import org.jbei.ice.lib.dto.entry.PartData;
 import org.jbei.ice.lib.dto.folder.FolderDetails;
 import org.jbei.ice.lib.dto.folder.FolderType;
+import org.jbei.ice.lib.entry.EntrySelection;
+import org.jbei.ice.lib.entry.EntrySelectionType;
 import org.jbei.ice.lib.shared.ColumnField;
 import org.jbei.ice.storage.DAOFactory;
 import org.jbei.ice.storage.hibernate.HibernateUtil;
@@ -37,7 +40,40 @@ public class FolderContentsTest {
 
     @Test
     public void testAddEntrySelection() throws Exception {
+        // create account
+        Account account = AccountCreator.createTestAccount("FolderContentsTest.testAddEntrySelection", true);
+        String userId = account.getEmail();
 
+        Account user = AccountCreator.createTestAccount("FolderContentsTest.testAddEntrySelection2", false);
+
+        // create folder
+        FolderDetails folderDetails = new FolderDetails();
+        folderDetails.setName("testAdd");
+        folderDetails.setOwner(user.toDataTransferObject());
+
+        FolderController controller = new FolderController();
+        folderDetails = controller.createPersonalFolder(userId, folderDetails);
+        Assert.assertNotNull(folderDetails);
+
+        // check folder ownership
+        Assert.assertEquals(1, controller.getUserFolders(user.getEmail()).size());
+
+        // entry selection context for adding to folder
+        EntrySelection selection = new EntrySelection();
+        selection.setSelectionType(EntrySelectionType.FOLDER);
+        selection.getDestination().add(folderDetails);
+
+        // create entries
+        long id = TestEntryCreator.createTestPart(userId);
+        selection.getEntries().add(id);
+
+        id = TestEntryCreator.createTestPart(userId);
+        selection.getEntries().add(id);
+
+        // add to folder
+        FolderContents folderContents = new FolderContents();
+        List<FolderDetails> folders = folderContents.addEntrySelection(userId, selection);
+        Assert.assertNotNull(folders);
     }
 
     @Test
@@ -49,8 +85,9 @@ public class FolderContentsTest {
     public void testGetContents() throws Exception {
         FolderContents folderContents = new FolderContents();
 
+
         // test with null id
-        folderContents.getContents(null, 0, ColumnField.PART_ID, false, 0, 10, null);
+        folderContents.getContents(null, 0, new PageParameters(0, 10, ColumnField.PART_ID, false, null));
 
         Account account = AccountCreator.createTestAccount("testRetrieveFolderContents", false);
         String userId = account.getEmail();
@@ -85,7 +122,7 @@ public class FolderContentsTest {
 
         // retrieve (supported sort types created, status, name, part_id, type)
         FolderDetails details = folderContents.getContents(account.getEmail(), folder.getId(),
-                ColumnField.PART_ID, false, 0, 15, null);
+                new PageParameters(0, 15, ColumnField.PART_ID, false, null));
         Assert.assertNotNull(details);
 
         short pageSize = 15;
@@ -100,8 +137,8 @@ public class FolderContentsTest {
             }
             // check remaining
             Assert.assertEquals((size - (it * pageSize)), parts.size());
-            details = folderContents.getContents(account.getEmail(), folder.getId(), ColumnField.PART_ID, false,
-                    pageSize * it, pageSize, null);
+            details = folderContents.getContents(account.getEmail(), folder.getId(),
+                    new PageParameters(pageSize * it, pageSize, ColumnField.PART_ID, false, null));
             it += 1;
         }
     }
