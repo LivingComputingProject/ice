@@ -147,7 +147,7 @@ public class AccountController {
                     .append("https://").append(url).append("/profile/").append(account.getId())
                     .append("\n\nThank you.");
 
-            Emailer.send(account.getEmail(), subject, builder.toString());
+            EmailFactory.getEmail().send(account.getEmail(), subject, builder.toString());
         } catch (final Exception ex) {
             Logger.error(ex);
             return false;

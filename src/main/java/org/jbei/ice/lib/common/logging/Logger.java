@@ -64,7 +64,7 @@ public class Logger {
             String body = "System Time: " + dateFormatter.format((new Date())) + "\n\n";
             body = body + message;
             String subject = "Error";
-            Emailer.error( prefix + " " + subject, body);
+            EmailFactory.getEmail().sendError(prefix + " " + subject, body);
         }
     }
 

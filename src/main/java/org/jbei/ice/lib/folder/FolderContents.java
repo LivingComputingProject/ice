@@ -104,6 +104,7 @@ public class FolderContents {
             if (entry == null) {
                 switch (partData.getType()) {
                     case PART:
+                    default:
                         entry = new Part();
                         break;
 
@@ -147,7 +148,7 @@ public class FolderContents {
             }
 
             if (!folderAuthorization.canWrite(userId, folder)) {
-                Logger.warn(userId + " lacks write privs on folder " + folder.getId());
+                Logger.warn(userId + " lacks write privileges on folder " + folder.getId());
                 continue;
             }
 
@@ -343,7 +344,7 @@ public class FolderContents {
         details.setCount(folderSize);
 
         if (userId != null) {
-            ArrayList<AccessPermission> permissions = getAndFilterFolderPermissions(userId, folder);
+            List<AccessPermission> permissions = getAndFilterFolderPermissions(userId, folder);
             details.setAccessPermissions(permissions);
             boolean canEdit = permissionsController.hasWritePermission(userId, folder);
             details.setCanEdit(canEdit);
@@ -468,8 +469,8 @@ public class FolderContents {
      * @param folder Folder whose permissions are to be retrieved
      * @return list of filtered permissions
      */
-    protected ArrayList<AccessPermission> getAndFilterFolderPermissions(String userId, Folder folder) {
-        ArrayList<AccessPermission> permissions = permissionsController.retrieveSetFolderPermission(folder, false);
+    protected List<AccessPermission> getAndFilterFolderPermissions(String userId, Folder folder) {
+        List<AccessPermission> permissions = permissionsController.retrieveSetFolderPermission(folder, false);
         if (accountController.isAdministrator(userId) || folder.getOwnerEmail().equalsIgnoreCase(userId)) {
             return permissions;
         }
@@ -511,7 +512,7 @@ public class FolderContents {
 
         for (Permission folderPermission : permissions) {
             for (Entry entry : entries) {
-                if (!entryAuthorization.canWriteThoroughCheck(userId, entry))
+                if (!entryAuthorization.canWrite(userId, entry))
                     continue;
 
                 // does the permissions already exists
