@@ -13,7 +13,6 @@ import org.jbei.ice.storage.model.*;
 
 import javax.persistence.criteria.*;
 import java.util.ArrayList;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 
@@ -101,7 +100,7 @@ public class EntryDAO extends HibernateRepository<Entry> {
         try {
             CriteriaQuery<Entry> query = getBuilder().createQuery(Entry.class);
             Root<Entry> from = query.from(Entry.class);
-            query.where(getBuilder().equal(from.get(field), fieldValue));
+            query.where(getBuilder().equal(getBuilder().lower(from.get(field)), fieldValue.toLowerCase()));
             return currentSession().createQuery(query).uniqueResult();
         } catch (HibernateException e) {
             Logger.error(e);
@@ -117,6 +116,8 @@ public class EntryDAO extends HibernateRepository<Entry> {
      * @throws DAOException
      */
     public Entry getByRecordId(String recordId) {
+        if (recordId == null)
+            return null;
         return getEntryByField("recordId", recordId);
     }
 
@@ -417,7 +418,7 @@ public class EntryDAO extends HibernateRepository<Entry> {
      */
     public List<Entry> getEntriesByIdSet(List<Long> ids) {
         if (ids == null || ids.isEmpty()) {
-            return new LinkedList<>();
+            return new ArrayList<>();
         }
 
         try {
@@ -758,7 +759,6 @@ public class EntryDAO extends HibernateRepository<Entry> {
             Logger.error(he);
             throw new DAOException(he);
         }
-
     }
 
     /**
