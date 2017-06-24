@@ -161,7 +161,7 @@ public class SBOL2Visitor {
                         feature.getSequence().getSequence().length(),
                         orientation
                 );
-                annotation.addRange("locationEnd", 1, location.getEnd(), orientation);
+                annotation.addRange("locationEnd" + annotationCount, 1, location.getEnd(), orientation);
             } else {
                 annotation = componentDefinition.createSequenceAnnotation(
                         "annotation" + annotationCount,

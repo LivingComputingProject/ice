@@ -19,7 +19,7 @@ import org.jbei.ice.lib.dto.entry.*;
 import org.jbei.ice.lib.dto.sample.PartSample;
 import org.jbei.ice.lib.dto.web.RegistryPartner;
 import org.jbei.ice.lib.entry.*;
-import org.jbei.ice.lib.entry.attachment.AttachmentController;
+import org.jbei.ice.lib.entry.attachment.Attachments;
 import org.jbei.ice.lib.entry.sample.SampleService;
 import org.jbei.ice.lib.entry.sequence.SequenceController;
 import org.jbei.ice.lib.entry.sequence.TraceSequences;
@@ -56,7 +56,7 @@ import java.util.List;
 public class PartResource extends RestResource {
 
     private EntryController controller = new EntryController();
-    private AttachmentController attachmentController = new AttachmentController();
+    private Attachments attachments = new Attachments();
     private SequenceController sequenceController = new SequenceController();
     private SampleService sampleService = new SampleService();
     private RemoteEntries remoteEntries = new RemoteEntries();
@@ -330,8 +330,8 @@ public class PartResource extends RestResource {
     public AttachmentInfo addAttachment(@PathParam("id") final long partId,
                                         final AttachmentInfo attachment) {
         final String userId = getUserId();
-        final AttachmentController attachmentController = new AttachmentController();
-        return attachmentController.addAttachmentToEntry(userId, partId, attachment);
+        final Attachments attachments = new Attachments();
+        return attachments.addAttachmentToEntry(userId, partId, attachment);
     }
 
     @GET
@@ -339,7 +339,7 @@ public class PartResource extends RestResource {
     @Path("/{id}/attachments")
     public List<AttachmentInfo> getAttachments(@PathParam("id") final long partId) {
         final String userId = getUserId();
-        return attachmentController.getByEntry(userId, partId);
+        return attachments.getByEntry(userId, partId);
     }
 
     @DELETE
@@ -347,7 +347,7 @@ public class PartResource extends RestResource {
     public Response deleteAttachment(@PathParam("id") final long partId,
                                      @PathParam("attachmentId") final long attachmentId) {
         final String userId = getUserId();
-        return super.respond(attachmentController.delete(userId, partId, attachmentId));
+        return super.respond(attachments.delete(userId, partId, attachmentId));
     }
 
     /**
@@ -745,8 +745,8 @@ public class PartResource extends RestResource {
         List<Long> arrayList = new ArrayList<>();
         for (Number id : entryIds)
             arrayList.add(id.longValue());
-        boolean success = entries.updateVisibility(arrayList, visibility);
-        return super.respond(success);
+        List<Long> updated = entries.updateVisibility(arrayList, visibility); // todo check return
+        return Response.ok(updated).build();
     }
 
     @GET
@@ -758,5 +758,21 @@ public class PartResource extends RestResource {
         log(userId, "requesting auto annotations for entry " + partId);
         Annotations annotations = new Annotations(userId);
         return super.respond(annotations.generate(partId, ownerFeatures));
+    }
+
+    @POST
+    @Path("/custom")
+    @Produces(MediaType.APPLICATION_OCTET_STREAM)
+    public Response customExport(EntrySelection selection) {
+        String userId = super.requireUserId();
+        EntriesAsCSV entriesAsCSV = new EntriesAsCSV(userId);
+
+        try (ByteArrayOutputStream outputStream = entriesAsCSV.customize(selection)) {
+            StreamingOutput stream = outputStream::writeTo;
+            return Response.ok(stream).header("Content-Disposition", "attachment;filename=\"data.zip\"").build();
+        } catch (IOException e) {
+            Logger.error(e);
+            throw new WebApplicationException(Response.Status.INTERNAL_SERVER_ERROR);
+        }
     }
 }
